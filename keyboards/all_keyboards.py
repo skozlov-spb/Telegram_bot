@@ -1,7 +1,7 @@
 from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
-from create_bot import admins
 from aiogram.types import BotCommand, BotCommandScopeDefault
-from create_bot import bot
+
+from create_bot import admins, bot
 
 
 def main_kb(user_telegram_id: int):
@@ -31,7 +31,6 @@ def create_spec_kb():
                                    one_time_keyboard=True,
                                    input_field_placeholder="Воспользуйтесь специальной клавиатурой:")
     return keyboard
-
 
 
 async def set_commands():
