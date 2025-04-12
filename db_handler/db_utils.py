@@ -107,9 +107,6 @@ class DBUtils:
             return []
         
         
-        
-        
-    #функция get_expert_recomendation пока не готова!
     
     async def get_expert_recommendations(self, subtheme_name: int) -> Optional[str]:
         """Получение рекомендаций экспертов по подтеме
