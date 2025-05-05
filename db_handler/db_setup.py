@@ -1,11 +1,10 @@
-import psycopg2
-from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
+import asyncpg
 from decouple import config
 
 from .db_class import Database
 
 
-def init_db():
+async def init_db():
     # Данные для БД
     PG_HOST = config("PG_HOST")
     PG_DB = config("PG_DB")
@@ -13,30 +12,45 @@ def init_db():
     PG_PASSWORD = config("PG_PASSWORD")
     PG_PORT = config("PG_PORT")
 
-    # Подключаемся к существующей БД postgres
-    conn = psycopg2.connect(
-        host=PG_HOST,
-        dbname="postgres",
+    # Подключаемся к существующей БД
+    admin_pool = await asyncpg.create_pool(
         user=PG_USER,
         password=PG_PASSWORD,
-        port=PG_PORT
+        database="postgres",
+        host=PG_HOST,
+        port=PG_PORT,
+        min_size=1, max_size=2
     )
-    conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-    cur = conn.cursor()
+    async with admin_pool.acquire() as conn:
 
-    # Проверяем, существует ли база данных
-    cur.execute(f"SELECT 1 FROM pg_database WHERE datname = '{PG_DB}'")
-    exists = cur.fetchone()
+        # Проверяем, существует ли наша БД
+        exists = await conn.fetchval(
+            """
+            SELECT 1 FROM pg_database WHERE datname = $1
+            """,
+            PG_DB
+        )
 
-    # Если не существует, то создаем БД и заполняем отношениями
-    if not exists:
-        cur.execute(f"CREATE DATABASE {PG_DB};")
+        if not exists:
+            # Если нет, создаём базу данных
+            await conn.execute(f'CREATE DATABASE "{PG_DB}"')
 
-        db = Database()
+    # Закрываем административный пул
+    await admin_pool.close()
 
-        # Наполняем базу
-        with db.conn.cursor() as cur:
-            cur.execute("""
+    # Заходим в актуальную БД
+    app_pool = await asyncpg.create_pool(
+        user=PG_USER,
+        password=PG_PASSWORD,
+        database=PG_DB,
+        host=PG_HOST,
+        port=PG_PORT,
+        min_size=1, max_size=5
+    )
+
+    async with app_pool.acquire() as conn:
+        # Если таблицы не существуют, то создаем и заполняем отношениями
+        await conn.execute("""
                 CREATE TABLE IF NOT EXISTS experts (
                     expert_id SERIAL PRIMARY KEY,
                     expert_name VARCHAR(30) DEFAULT 'Имя скрыто',
@@ -86,7 +100,7 @@ def init_db():
                     log_id SERIAL PRIMARY KEY,
                     user_id INT NOT NULL,
                     request_time TIMESTAMP DEFAULT NOW(),
-                    request_type TEXT NOT NULL CHECK (request_type IN ('use_bot', 'get_recommendation', 'delete_bot')),
+                    request_type TEXT NOT NULL CHECK (request_type IN ('use_bot', 'get_recommendation', 'unsubscribe')),
                     theme_id INT DEFAULT NULL,
 
                     FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE,
@@ -94,8 +108,4 @@ def init_db():
                 );
             """)
 
-        print("База данных инициализирована!")
-        db.close()
-
-    cur.close()
-    conn.close()
+    await app_pool.close()

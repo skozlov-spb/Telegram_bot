@@ -15,11 +15,13 @@ async def start_bot():
 
 
 async def main():
-    # регистрация роутеров
+    await init_db()  # Инициализируем БД
+
+    # Регистрация роутеров
     dp.include_router(start_router)
     dp.startup.register(start_bot)
 
-    # запуск бота в режиме long polling при запуске бот очищает все обновления, которые были за его моменты бездействия
+    # Запуск бота в режиме long polling при запуске бот очищает все обновления, которые были за его моменты бездействия
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
@@ -28,8 +30,6 @@ async def main():
 
 
 if __name__ == "__main__":
-    init_db()  # Инициализируем БД
-
     # Запускаем Flask-сервер
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
