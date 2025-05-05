@@ -163,3 +163,5 @@ cython_debug/
 
 # Ignore .env file
 .env
+
+__pycache__/\n*.pyc
