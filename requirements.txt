@@ -4,3 +4,5 @@ APScheduler
 python-decouple
 python-dotenv
 Flask
+openpyxl
+pandas

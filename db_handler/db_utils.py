@@ -1,5 +1,5 @@
 import logging
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Union, Tuple
 from datetime import datetime, timedelta
 
 import asyncpg
@@ -15,13 +15,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 ALLOWED_ACTIVITIES = [
-    'use_bot',
-    'start_bot', 
-    'get_expert_recommendation', 
+    'start_bot',
+    'get_expert_recommendation',
+    'get_recomendation',
     'subscribe',
     'unsubscribe',
-    'get_recomendation',
-    'check_subscription'
 ]
 
 CHANNEL_SPBU_ID = -1001752627981
@@ -99,15 +97,15 @@ class DBUtils:
                 username
             )
             
-            is_new = result['is_new'] if result else False
+            is_new = not result['is_new'] if result else True
             
-            if is_new:
+            if not is_new:
                 logger.info(f"Пользователь уже существует: {username} (ID: {user_id})")
                 return False
 
             else:
                 logger.info(f"Зарегистрирован новый пользователь: {username} (ID: {user_id})")
-                await self.log_user_activity(user_id, 'use_bot')
+                await self.log_user_activity(user_id, 'start_bot')
                 return True
 
         except Exception as exc:
@@ -187,20 +185,20 @@ class DBUtils:
     async def get_expert_recommendations(
             self,
             subtheme_name: str
-    ) -> Optional[Dict[str, Dict[str, str]]]:
+    ) -> Optional[Dict[str, Dict]]:
         """
         Получение рекомендаций экспертов по подтеме
 
-        :return словарь - id_книги -> (название книги, автор книги, имя эксперта, должность эксперта, описание от эксперта)
+        :return selections: Возвращает словарь ID автора - (имя автора, должность, список книг и описаний)
         """
         try:
             recommendations = await self.db.fetch(
                 """
-                SELECT 
-                    b.book_id, 
-                    b.book_name, 
+                SELECT
+                    e.expert_id,
                     e.expert_name, 
                     e.expert_position, 
+                    b.book_name,  
                     er.description
                 FROM
                     experts_recommendations er
@@ -215,15 +213,20 @@ class DBUtils:
             if not recommendations:
                 return None
 
-            return {
-                row['book_id']: {
-                    "book_name": row['book_name'],
-                    "expert_name": row['expert_name'],
-                    "expert_position": row['expert_position'],
-                    "description": row['description']
+            selections = {
+                row['expert_id']: {
+                    'name': row['expert_name'],
+                    'position': row['expert_position'],
+                    'books': []
                 }
                 for row in recommendations
             }
+            for row in recommendations:
+                selections[row['expert_id']]['books'].append(
+                    (row['book_id'], row['description'])
+                )
+
+            return selections
             
         except Exception as exc:
             logger.error(f"Ошибка получения рекомендаций для подтемы '{subtheme_name}': {exc}")
