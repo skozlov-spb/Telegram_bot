@@ -6,7 +6,7 @@ import asyncpg
 from asyncpg.pool import Pool
 
 from aiogram import Bot
-from aiogram.utils.exceptions import UserNotParticipant, ChatAdminRequired, TelegramAPIError
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramAPIError
 
 from .db_class import Database
 
@@ -59,10 +59,14 @@ class DBUtils:
             is_subscribe = chat_member.status in ['member', 'administrator', 'creator']
             return is_subscribe
 
-        except UserNotParticipant:
-            return False
+        except TelegramBadRequest as exp:
+            # Пользователь не подписан
+            if "USER_NOT_PARTICIPANT" in str(exp):
+                return False
 
-        except ChatAdminRequired:
+            raise
+
+        except TelegramForbiddenError:
             logger.error(f"Бот не является администратором в чате {channel_id}")
             return False
 
