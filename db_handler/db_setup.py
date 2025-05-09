@@ -122,50 +122,98 @@ async def init_db():
             """)
 
         # Импортируем данные
-        experts = pd.read_excel('db_handler/data/ExpertsPreferences.xlsx', header=7)
+        experts = pd.read_excel(
+            'db_handler/data/ExpertsPreferences.xlsx',
+            skiprows=7,
+            names=[
+                "expert_name",       
+                "expert_position",   
+                "general_theme",     
+                "specific_theme",    
+                "book_name",         
+                "description",       
+            ],
+        ).dropna(subset=["expert_name"])
 
         # Группируем по авторам, подтемам и тп
         grouped = experts.groupby([
-            'Имя эксперта',
-            'Должность эксперта в СПбГУ',
-            'Общая тема подборки',
-            'Конкретная тема подборки'
+            'expert_name',
+            'expert_position',
+            'general_theme',
+            'specific_theme'
         ], as_index=False).agg({
-            'Название книги': list,
-            'Короткое описание от эксперта': list
+            'book_name': list,
+            'description': list
         })
+        
+        cache = {
+            'experts': {},
+            'themes': {},
+            'books': {}
+        }
 
         # Заполняем таблицы
         async with app_pool.acquire() as conn:
             for _, row in grouped.iterrows():
-                expert_id = await conn.fetchval("""
-                    INSERT INTO experts (expert_name, expert_position)
-                    VALUES ($1, $2)
-                    ON CONFLICT (expert_name, expert_position) DO UPDATE SET expert_name = EXCLUDED.expert_name
-                    RETURNING expert_id
-                """, row['Имя эксперта'], row['Должность эксперта в СПбГУ'])
+                expert_key = (row['expert_name'].strip(), row['expert_position'].strip())
+                if expert_key not in cache['experts']:
+                    expert_id = await conn.fetchval("""
+                        INSERT INTO experts (expert_name, expert_position)
+                        VALUES ($1, $2)
+                        ON CONFLICT (expert_name, expert_position) DO NOTHING
+                        RETURNING expert_id
+                    """, *expert_key)
 
-                theme_id = await conn.fetchval("""
-                    INSERT INTO themes (theme_name, specific_theme)
-                    VALUES ($1, $2)
-                    ON CONFLICT (theme_name, specific_theme) DO UPDATE SET specific_theme = EXCLUDED.specific_theme
-                    RETURNING theme_id
-                """, row['Общая тема подборки'], row['Конкретная тема подборки'])
+                    if not expert_id:
+                        expert_id = await conn.fetchval(
+                            """SELECT expert_id FROM experts 
+                            WHERE expert_name = $1 AND expert_position = $2""",
+                            *expert_key
+                        )
+                    cache['experts'][expert_key] = expert_id
+                    
+                theme_key = (row['general_theme'].strip(), row['specific_theme'].strip())
+                if theme_key not in cache['themes']:
+                    theme_id = await conn.fetchval("""
+                        INSERT INTO themes (theme_name, specific_theme)
+                        VALUES ($1, $2)
+                        ON CONFLICT (theme_name, specific_theme) DO NOTHING
+                        RETURNING theme_id
+                    """, *theme_key)
+                    
+                    if not theme_id:
+                        theme_id = await conn.fetchval(
+                            "SELECT theme_id FROM themes WHERE theme_name = $1 AND specific_theme = $2",
+                            *theme_key
+                        )
+                    cache['themes'][theme_key] = theme_id
 
-                for book_name, description in zip(row['Название книги'], row['Короткое описание от эксперта']):
-                    book_id = await conn.fetchval("""
-                        INSERT INTO books (book_name)
-                        VALUES ($1)
-                        ON CONFLICT (book_name) DO NOTHING
-                        RETURNING book_id
-                    """, book_name)
+                for book_name, description in zip(row['book_name'], row['description']):
+                    book_name = book_name.strip()
+                    if book_name not in cache['books']:
+                        book_id = await conn.fetchval("""
+                            INSERT INTO books (book_name)
+                            VALUES ($1)
+                            ON CONFLICT (book_name) DO NOTHING
+                            RETURNING book_id
+                        """, book_name)
 
-                    if book_id is None:
-                        book_id = await conn.fetchval("SELECT book_id FROM books WHERE book_name = $1", book_name)
+                        if not book_id:
+                            book_id = await conn.fetchval(
+                                "SELECT book_id FROM books WHERE book_name = $1",
+                                book_name
+                            )
+                        cache['books'][book_name] = book_id
 
                     await conn.execute("""
-                        INSERT INTO experts_recommendations (expert_id, theme_id, book_id, description)
+                        INSERT INTO experts_recommendations 
+                        (expert_id, theme_id, book_id, description)
                         VALUES ($1, $2, $3, $4)
-                    """, expert_id, theme_id, book_id, description)
+                    """, 
+                    cache['experts'][expert_key], 
+                    cache['themes'][theme_key], 
+                    cache['books'][book_name],
+                    description.strip())
 
         await app_pool.close()
+        

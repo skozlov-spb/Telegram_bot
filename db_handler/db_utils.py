@@ -227,7 +227,7 @@ class DBUtils:
             }
             for row in recommendations:
                 selections[row['expert_id']]['books'].append(
-                    (row['book_id'], row['description'])
+                    (row['book_name'], row['description'])
                 )
 
             return selections
