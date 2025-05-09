@@ -9,7 +9,6 @@ from keyboards.all_keyboards import main_kb, themes_inline_kb
 from create_bot import bot
 
 start_router = Router()
-db_utils = DBUtils(db=Database(), bot=bot)
 
 
 @start_router.message(CommandStart())
@@ -18,15 +17,10 @@ async def cmd_start(message: Message):
                          reply_markup=main_kb(message.from_user.id))
 
 
-@start_router.message(Command('start_2'))
-async def cmd_start_2(message: Message):
-    await message.answer('Меню 2',
-                         reply_markup=create_spec_kb())
-
-
 @start_router.message(F.text == 'привет')
 async def cmd_start_3(message: Message):
     await message.answer('Привет!')
+
 
 @start_router.message(F.text == "📚 Рекомендация экспертов")
 async def expert_recommendation(message: Message):
@@ -36,14 +30,16 @@ async def expert_recommendation(message: Message):
     )
 
 
-# Обработчик для callback-запросов инлайн-кнопок
+# Обработчик для callback-запросов инлайн-кнопок экспертов
 @start_router.callback_query()
 async def process_callback(callback: CallbackQuery):
     data = callback.data
+    db_utils = DBUtils(db=Database(), bot=bot)
+    await db_utils.db.connect()
 
     if data == "get_themes":
         # Получение доступных тем
-        themes: List[str] =  await db_utils.get_available_themes()
+        themes = await db_utils.get_available_themes()
         if not themes:
             await callback.message.answer("Темы отсутствуют.")
             await callback.answer()
@@ -61,7 +57,7 @@ async def process_callback(callback: CallbackQuery):
         theme_name = data[len("theme_"):]
 
         # Получение подтем
-        subthemes: List[str] =  await db_utils.get_subthemes(theme_name)
+        subthemes = await db_utils.get_subthemes(theme_name)
         if not subthemes:
             await callback.message.answer(f"Подтемы для {theme_name} не найдены.")
             await callback.answer()
@@ -74,26 +70,60 @@ async def process_callback(callback: CallbackQuery):
         ])
         await callback.message.edit_text(f"Выберите подтему для {theme_name}:", reply_markup=keyboard)
 
-    elif data.startswith("subtheme_"):
-        # Извлечение названия подтемы
-        subtheme_name = data[len("subtheme_"):]
+    elif data.startswith("subtheme_") or data.startswith("expert_"):
+        # Инициализация переменных
+        if data.startswith("subtheme_"):
+            subtheme_name = data[len("subtheme_"):]
+            current_index = 0
+        else:
+            # Извлечение подтемы и индекса из callback
+            subtheme_name, action = data[len("expert_"):].split("_")
+            current_index = int(callback.message.reply_markup.inline_keyboard[-1][0].callback_data.split("_")[-1])
+            if action == "next":
+                current_index += 1
+            elif action == "prev":
+                current_index -= 1
 
         # Получение рекомендаций экспертов
-        recommendations: Optional[dict] = await db_utils.get_expert_recommendations(subtheme_name)
+        recommendations = await db_utils.get_expert_recommendations(subtheme_name)
         if not recommendations:
             await callback.message.answer(f"Рекомендации для {subtheme_name} не найдены.")
             await callback.answer()
             return
 
-        # Форматирование рекомендаций
-        response = f"Рекомендации для {subtheme_name}:\n\n"
-        for book_id, info in recommendations.items():
-            response += (
-                f"📖 *Книга*: {info['book_name']}\n"
-                f"👤 *Эксперт*: {info['expert_name']} ({info['expert_position']})\n"
-                f"💬 *Описание*: {info['description']}\n\n"
-            )
+        # Преобразование рекомендаций в список для удобного доступа по индексу
+        experts = list(recommendations.items())
+        if current_index < 0 or current_index >= len(experts):
+            await callback.answer("Больше экспертов нет.")
+            return
 
-        await callback.message.edit_text(response, parse_mode="Markdown")
+        # Получение данных текущего эксперта
+        expert_id, info = experts[current_index]
+
+        # Форматирование ответа
+        response = f"**Рекомендации для {subtheme_name}**\n\n"
+        response += f"👤 **{info['name']}** ({info['position']})\n"
+        response += "📚 **Книги**:\n"
+        for book_id, description in info['books']:
+            # Получение названия книги по book_id
+            book_name = book_id
+            response += f"📖 {book_name}\n💬 {description}\n\n"
+
+        # Создание инлайн-кнопок для перелистывания
+        buttons = []
+        if current_index > 0:
+            buttons.append(InlineKeyboardButton(text="⬅️ Назад", callback_data=f"expert_{subtheme_name}_prev"))
+        if current_index < len(experts) - 1:
+            buttons.append(InlineKeyboardButton(text="Вперед ➡️", callback_data=f"expert_{subtheme_name}_next"))
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            buttons,
+            [InlineKeyboardButton(text=f"Эксперт {current_index + 1}/{len(experts)}",
+                                  callback_data=f"index_{current_index}")]
+        ])
+
+        # Обновление сообщения
+        await callback.message.edit_text(response, parse_mode="Markdown", reply_markup=keyboard)
 
     await callback.answer()
+    await db_utils.db.close()
