@@ -17,9 +17,14 @@ async def cmd_start(message: Message):
                          reply_markup=main_kb(message.from_user.id), parse_mode="Markdown")
 
 
-@start_router.message(F.text == 'привет')
+@start_router.message(F.text == "Привет")
 async def cmd_start_3(message: Message):
     await message.answer('Привет! 😊 *Готов помочь!*')
+
+
+@start_router.message(F.text == "📝 Рекомендация")
+async def cmd_start_3(message: Message):
+    await message.answer('**В разработке...**', parse_mode="Markdown")
 
 
 @start_router.message(F.text == "📚 Рекомендация экспертов")
@@ -60,7 +65,7 @@ async def process_callback(callback: CallbackQuery):
 
         # Создание инлайн-кнопок для текущей страницы
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"theme_{current_themes.index(theme)}")]
+            [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"theme_{current_themes.index(theme) + start_idx}")]
             for theme in current_themes
         ])
 
@@ -108,7 +113,7 @@ async def process_callback(callback: CallbackQuery):
         # Создание инлайн-кнопок для текущей страницы
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"📋 {subtheme}",
-                                  callback_data=f"subtheme_{current_subthemes.index(subtheme)}_{theme_id}")]
+                                  callback_data=f"subtheme_{current_subthemes.index(subtheme)}_{theme_id + start_idx}")]
             for subtheme in current_subthemes
         ])
 
@@ -116,10 +121,10 @@ async def process_callback(callback: CallbackQuery):
         nav_buttons = []
         if page > 0:
             nav_buttons.append(
-                InlineKeyboardButton(text="◄ Назад", callback_data=f"subthemes_{theme_id}_{page - 1}"))
+                InlineKeyboardButton(text="◄ Назад", callback_data=f"subthemes_{theme_id + start_idx}_{page - 1}"))
         if page < total_pages - 1:
             nav_buttons.append(
-                InlineKeyboardButton(text="Вперёд ►", callback_data=f"subthemes_{theme_id}_{page + 1}"))
+                InlineKeyboardButton(text="Вперёд ►", callback_data=f"subthemes_{theme_id + start_idx}_{page + 1}"))
         if nav_buttons:
             keyboard.inline_keyboard.append(nav_buttons)
         keyboard.inline_keyboard.append(
