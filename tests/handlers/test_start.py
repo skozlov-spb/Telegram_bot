@@ -14,7 +14,6 @@ from typing import List, Optional
 
 class TestStartHandlers(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        # Создаем моки для сообщений и callback-запросов
         self.mock_message = MagicMock(spec=Message)
         self.mock_message.from_user = MagicMock(id=123, username="test_user")
         self.mock_message.answer = AsyncMock()

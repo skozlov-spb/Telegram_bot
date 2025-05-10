@@ -58,13 +58,13 @@ class TestDBUtils(unittest.IsolatedAsyncioTestCase):
             {'user_id': 123},
             {'user_id': 456}
         ]
-        self.db_utils.is_active = AsyncMock(side_effect=[True, False])  # Первый активен, второй нет
-        self.db_utils.is_subscribed = AsyncMock(side_effect=[True, False])  # Первый подписан, второй нет
+        self.db_utils.is_active = AsyncMock(side_effect=[True, False])
+        self.db_utils.is_subscribed = AsyncMock(side_effect=[True, False])
 
         result = await self.db_utils.get_statistic()
         expected = {
             "total_users": 2,
-            "inactive_percent": 50.0,  # 1 из 2 неактивен
+            "inactive_percent": 50.0,
             "subscribed_users": 1
         }
         self.assertEqual(result, expected)
