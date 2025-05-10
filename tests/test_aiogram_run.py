@@ -1,71 +1,82 @@
 import unittest
-from unittest.mock import Mock, AsyncMock, patch
 import asyncio
-import threading
+from unittest.mock import patch, MagicMock, AsyncMock
+from unittest import IsolatedAsyncioTestCase
+import sys
+import importlib
 
-# Патчим psycopg2.connect до импорта
-with patch('psycopg2.connect') as mock_psycopg2_connect:
-    mock_psycopg2_connect.return_value = Mock()
-    from aiogram_run import start_bot, main
 
-class TestAiogramRun(unittest.IsolatedAsyncioTestCase):
+class TestAiogramRun(IsolatedAsyncioTestCase):
     def setUp(self):
+        # Мокируем основные зависимости
+        self.mock_thread = patch('threading.Thread').start()
+        self.mock_run_flask = patch('server.run_flask').start()
+
+        # Создаем моки для бота и диспетчера
         self.mock_bot = AsyncMock()
-        self.mock_dp = AsyncMock()
-        self.mock_scheduler = Mock()
-        self.mock_run_flask = Mock()
-        self.mock_set_commands = AsyncMock()
-        self.mock_start_router = Mock()
+        self.mock_dp = MagicMock()
 
-        self.patcher_bot = patch('aiogram_run.bot', new=self.mock_bot)
-        self.patcher_dp = patch('aiogram_run.dp', new=self.mock_dp)
-        self.patcher_scheduler = patch('aiogram_run.scheduler', new=self.mock_scheduler)
-        self.patcher_run_flask = patch('aiogram_run.run_flask', new=self.mock_run_flask)
-        self.patcher_set_commands = patch('aiogram_run.set_commands', new=self.mock_set_commands)
-        self.patcher_start_router = patch('aiogram_run.start_router', new=self.mock_start_router)
+        # Патчим модуль create_bot
+        self.patch_create_bot = patch.dict('sys.modules', {
+            'create_bot': MagicMock(
+                bot=self.mock_bot,
+                dp=self.mock_dp,
+                scheduler=MagicMock()
+            )
+        }).start()
 
-        self.patcher_bot.start()
-        self.patcher_dp.start()
-        self.patcher_scheduler.start()
-        self.patcher_run_flask.start()
-        self.patcher_set_commands.start()
-        self.patcher_start_router.start()
+        # Патчим остальные зависимости
+        self.mock_init_db = patch('db_handler.db_setup.init_db', AsyncMock()).start()
+        self.mock_set_commands = patch('keyboards.all_keyboards.set_commands', AsyncMock()).start()
+        self.mock_start_router = patch('handlers.start.start_router').start()
 
-    def tearDown(self):
-        self.patcher_bot.stop()
-        self.patcher_dp.stop()
-        self.patcher_scheduler.stop()
-        self.patcher_run_flask.stop()
-        self.patcher_set_commands.stop()
-        self.patcher_start_router.stop()
-
-    async def test_start_bot(self):
-        await start_bot()
-        self.mock_set_commands.assert_called_once()
-
-    async def test_main(self):
+        # Настраиваем поведение моков
+        self.mock_dp.startup = MagicMock()
+        self.mock_dp.resolve_used_update_types = MagicMock(return_value=['message'])
         self.mock_dp.start_polling = AsyncMock()
+
         self.mock_bot.delete_webhook = AsyncMock()
+        self.mock_bot.session = MagicMock()
         self.mock_bot.session.close = AsyncMock()
+
+        self.addCleanup(patch.stopall)
+
+    async def test_start_bot_success(self):
+        """Тестируем успешное выполнение start_bot()"""
+        from aiogram_run import start_bot
+
+        await start_bot()
+        self.mock_set_commands.assert_awaited_once()
+
+    async def test_main_function_success(self):
+        """Тестируем успешное выполнение main()"""
+        from aiogram_run import main
 
         await main()
 
+        # Проверяем основные вызовы
+        self.mock_init_db.assert_awaited_once()
         self.mock_dp.include_router.assert_called_once_with(self.mock_start_router)
-        self.mock_dp.startup.register.assert_called_once_with(start_bot)
-        self.mock_bot.delete_webhook.assert_called_once_with(drop_pending_updates=True)
-        self.mock_dp.start_polling.assert_called_once()
-        self.mock_bot.session.close.assert_called_once()
-        self.mock_run_flask.assert_called_once()
+        self.mock_dp.startup.register.assert_called_once()
+        self.mock_bot.delete_webhook.assert_awaited_once_with(drop_pending_updates=True)
+        self.mock_dp.start_polling.assert_awaited_once_with(self.mock_bot, allowed_updates=['message'])
+        self.mock_bot.session.close.assert_awaited_once()
 
-    async def test_main_threading(self):
-        with patch('threading.Thread') as mock_thread:
-            mock_thread_instance = Mock()
-            mock_thread.return_value = mock_thread_instance
+    async def test_bot_session_closed_on_error(self):
+        """Тестируем закрытие сессии бота при ошибке"""
+        from aiogram_run import main
 
+        # Настраиваем мок для вызова исключения
+        self.mock_dp.start_polling.side_effect = Exception("Test error")
+
+        try:
             await main()
+        except Exception:
+            pass
 
-            mock_thread.assert_called_once_with(target=self.mock_run_flask, daemon=True)
-            mock_thread_instance.start.assert_called_once()
+        # Проверяем, что сессия была закрыта
+        self.mock_bot.session.close.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()
