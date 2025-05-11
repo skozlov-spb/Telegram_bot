@@ -2,5 +2,7 @@ asyncpg
 aiogram
 APScheduler
 python-decouple
-psycopg2
+python-dotenv
 Flask
+openpyxl
+pandas

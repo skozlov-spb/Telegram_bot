@@ -1,7 +1,7 @@
-from aiogram.types import KeyboardButton, ReplyKeyboardMarkup
+from aiogram.types import KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.types import BotCommand, BotCommandScopeDefault
 
-from create_bot import admins, bot
+from create_bot import admins, bot, dp
 
 
 def main_kb(user_telegram_id: int):
@@ -23,3 +23,11 @@ def main_kb(user_telegram_id: int):
 async def set_commands():
     commands = [BotCommand(command='start', description='Старт')]
     await bot.set_my_commands(commands, BotCommandScopeDefault())
+
+
+def themes_inline_kb():
+    """Создает инлайн-клавиатуру с кнопкой 'Получить темы'"""
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Получить темы", callback_data="get_themes")]
+    ])
+    return keyboard
