@@ -9,8 +9,9 @@ from create_bot import bot
 
 start_router = Router()
 
-db = Database
-db_utils = DBUtils(db=db, bot = bot)
+db = Database()
+db_utils = DBUtils(db=db, bot=bot)
+
 
 @start_router.message(CommandStart())
 async def cmd_start(message: Message):
@@ -22,6 +23,7 @@ async def cmd_start(message: Message):
     await message.answer('**Добро пожаловать!** 🎉\nВыберите действие в меню ниже:',
                          reply_markup=main_kb(message.from_user.id), parse_mode="Markdown")
     await db_utils.db.close()
+
 
 @start_router.message(F.text == "Привет")
 async def cmd_start_3(message: Message):
@@ -183,7 +185,7 @@ async def process_callback(callback: CallbackQuery):
 
         # Форматирование ответа
         theme_id = await db_utils.get_theme_id(theme_name, subtheme_name)
-        await db_utils.log_user_activity(user_id = callback.from_user.id, activity_type='get_expert_recommnedation', theme_id=theme_id)
+        await db_utils.log_user_activity(user_id=callback.from_user.id, activity_type='get_expert_recommendation', theme_id=theme_id)
         
         response = f"**Рекомендации для __{subtheme_name}__** 📚\n\n"
         response += f"👤 **{info['name']}** *({info['position']})*\n\n"
