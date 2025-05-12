@@ -17,9 +17,11 @@ logger = logging.getLogger(__name__)
 ALLOWED_ACTIVITIES = [
     'start_bot',
     'get_expert_recommendation',
-    'get_recomendation',
+    'get_recommendation',
     'subscribe',
     'unsubscribe',
+    'presubscribed_spbu_true',
+    'presubscribed_landau_true'
 ]
 
 CHANNEL_SPBU_ID = -1001752627981
@@ -105,6 +107,7 @@ class DBUtils:
             
             if not is_new:
                 logger.info(f"Пользователь уже существует: {username} (ID: {user_id})")
+                await self.log_user_activity(user_id, 'start_bot')
                 return False
 
             else:
@@ -345,3 +348,33 @@ class DBUtils:
                 "inactive_percent": 0.0,
                 "subscribed_users": 0
             }
+
+    async def get_theme_id(
+            self,
+            theme_name: str,
+            subtheme_name: str
+    ) -> Optional[int]:
+        """
+        Получение ID темы по названию темы и подтемы.
+
+        :param theme_name: Название общей темы (например, 'Физика')
+        :param subtheme_name: Конкретная подтема (например, 'Квантовая механика')
+        :return: ID темы или None, если не найдено
+        """
+        try:
+            result = await self.db.fetchrow(
+                """
+                SELECT 
+                    theme_id 
+                FROM themes 
+                WHERE theme_name = $1 
+                    AND specific_theme = $2
+                """,
+                theme_name,
+                subtheme_name
+            )
+            return result["theme_id"] if result else None
+
+        except Exception as exc:
+            logger.error(f"Ошибка получения theme_id для {theme_name}/{subtheme_name}: {exc}")
+            return None
