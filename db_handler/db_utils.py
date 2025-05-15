@@ -103,21 +103,21 @@ class DBUtils:
                 username
             )
             
-            is_new = not result['is_new'] if result else True
-            
-            if not is_new:
-                logger.info(f"Пользователь уже существует: {username} (ID: {user_id})")
-                await self.log_user_activity(user_id, 'start_bot')
-                return False
+            is_new = result['is_new'] if result else False
 
-            else:
+            if is_new:
                 logger.info(f"Зарегистрирован новый пользователь: {username} (ID: {user_id})")
                 await self.log_user_activity(user_id, 'start_bot')
                 return True
 
+            else:
+                logger.info(f"Пользователь уже существует: {username} (ID: {user_id})")
+                await self.log_user_activity(user_id, 'start_bot')
+                return False
+
         except Exception as exc:
             logger.error(f"Ошибка регистрации пользователя: {exc}")
-            return False  # Если не получилось - все равно True
+            return False
 
     async def log_user_activity(
             self,
