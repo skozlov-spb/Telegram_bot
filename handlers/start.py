@@ -19,24 +19,77 @@ async def cmd_start(message: Message):
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.full_name
     is_new_user = await db_utils.register_user(user_id, username)
-    
+
     await message.answer('**Добро пожаловать!** 🎉\nВыберите действие в меню ниже:',
                          reply_markup=main_kb(message.from_user.id), parse_mode="Markdown")
     await db_utils.db.close()
 
 
 @start_router.message(F.text == "Привет")
-async def cmd_start_3(message: Message):
+async def cmd_hello(message: Message):
     await message.answer('Привет! 😊 *Готов помочь!*')
 
 
 @start_router.message(F.text == "📝 Рекомендация")
-async def cmd_start_3(message: Message):
+async def cmd_recc(message: Message):
     await db_utils.db.connect()
     user_id = message.from_user.id
     await db_utils.log_user_activity(user_id, activity_type='get_recommenadation', theme_id=None)
     await db_utils.db.close()
     await message.answer('**В разработке...**', parse_mode="Markdown")
+
+
+# Обработчик кнопки "Подписка"
+@start_router.message(F.text == "✅ Подписка")
+async def handle_subscription(message: Message):
+    await db_utils.db.connect()
+    user_id = message.from_user.id
+    is_sub = await db_utils.is_subscribed(user_id)
+
+    # Создаем инлайн-клавиатуру
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="Отписаться" if is_sub else "Подписаться",
+            callback_data="unsubscribe" if is_sub else "subscribe"
+        )
+    ]])
+
+    await message.answer(
+        text="Нажмите кнопку для управления подпиской:",
+        reply_markup=keyboard
+    )
+    await db_utils.db.close()
+
+
+# Обработчик инлайн-кнопок подписки/отписки
+@start_router.callback_query(F.data.in_(["subscribe", "unsubscribe"]))
+async def process_subscription_callback(callback: CallbackQuery):
+    await db_utils.db.connect()
+    user_id = callback.from_user.id
+    action = callback.data
+
+    # Определяем новое состояние подписки
+
+    # Логируем активность
+    activity_type = "subscribed" if action == "subscribe" else "unsubscribed"
+    await db_utils.log_user_activity(
+        user_id=user_id,
+        activity_type=activity_type,
+        theme_id=None
+    )
+
+    response_text = "Вы подписались!" if action == "subscribe" else "Вы отписались!"
+
+    try:
+        # Удаляем сообщение бота
+        await callback.message.delete()
+    except TelegramBadRequest as e:
+        # Обрабатываем возможные ошибки, например, если сообщение уже удалено
+        pass
+
+    await callback.message.answer(response_text)
+    await callback.answer()
+    await db_utils.db.close()
 
 
 @start_router.message(F.text == "📚 Рекомендация экспертов")
@@ -185,8 +238,9 @@ async def process_callback(callback: CallbackQuery):
 
         # Форматирование ответа
         theme_id = await db_utils.get_theme_id(theme_name, subtheme_name)
-        await db_utils.log_user_activity(user_id=callback.from_user.id, activity_type='get_expert_recommendation', theme_id=theme_id)
-        
+        await db_utils.log_user_activity(user_id=callback.from_user.id, activity_type='get_expert_recommendation',
+                                         theme_id=theme_id)
+
         response = f"**Рекомендации для __{subtheme_name}__** 📚\n\n"
         response += f"👤 **{info['name']}** *({info['position']})*\n\n"
         response += "__Книги:__\n"
