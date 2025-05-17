@@ -15,8 +15,6 @@ class RecommendationSystem:
         self.theme_id_to_index = {}
         self.index_to_theme_id = {}
         self.specific_themes = []
-        print('иди нахуй влад где ты блять тут туса собралась а ты где тыэ')
-        print('copilot brat zovet')
 
     def _embed_texts(self, texts: List[str]) -> np.ndarray:
         """Generate BERT embeddings for a list of texts."""
@@ -25,8 +23,8 @@ class RecommendationSystem:
         with torch.no_grad():
             for i in range(0, len(texts), batch_size):
                 batch_texts = texts[i:i+batch_size]
-                embeddings = self.model.encode(batch_texts, convert_to_tensor=True, show_progress_bar=False)
-                all_embeddings.append(embeddings.cpu().numpy())
+                embeddings = self.model.encode(batch_texts, show_progress_bar=False)
+                all_embeddings.append(embeddings)
         return np.vstack(all_embeddings)
 
     async def _load_theme_embeddings(self):
@@ -104,7 +102,7 @@ class RecommendationSystem:
             """,
             user_id
         )
-        await self.db.close()
+
         user_theme_ids = {row['theme_id'] for row in user_theme_rows}
 
         # Prepare list of (theme_id, similarity) excluding already seen
@@ -122,7 +120,6 @@ class RecommendationSystem:
         if not top_candidates:
             return []
 
-        await self.db.connect()
         theme_ids = [c[0] for c in top_candidates]
         rows = await self.db.fetch(
             """

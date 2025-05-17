@@ -6,3 +6,7 @@ python-dotenv
 Flask
 openpyxl
 pandas
+torch
+sentence-transformers
+hf-xet
+numpy
