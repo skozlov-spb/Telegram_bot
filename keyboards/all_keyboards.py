@@ -6,7 +6,7 @@ from create_bot import admins, bot, dp
 
 def main_kb(user_telegram_id: int):
     kb_list = [
-        [KeyboardButton(text="📝 Рекомендация"), KeyboardButton(text="📚 Рекомендация экспертов"), ]
+        [KeyboardButton(text="📝 Рекомендации"), KeyboardButton(text="📚 Подборки от экспертов"), KeyboardButton(text="🔔 Подписка | Отписка")]
         # Кнопка на будущее: KeyboardButton(text="🔔 Подписка | Отписка")
     ]
     if user_telegram_id in admins:

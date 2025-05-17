@@ -1,7 +1,9 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
 from db_handler.db_utils import DBUtils
+from recommendation_system.model import RecommendationSystem
 from db_handler.db_class import Database
 
 from keyboards.all_keyboards import main_kb, themes_inline_kb
@@ -10,6 +12,7 @@ from create_bot import bot
 start_router = Router()
 
 db = Database()
+rec_sys = RecommendationSystem(db=Database())
 db_utils = DBUtils(db=db, bot=bot)
 
 
@@ -25,72 +28,111 @@ async def cmd_start(message: Message):
     await db_utils.db.close()
 
 
-@start_router.message(F.text == "📝 Рекомендация")
+@start_router.message(F.text == "📝 Рекомендации")
 async def cmd_recc(message: Message):
-    await db_utils.db.connect()
     user_id = message.from_user.id
+    await db_utils.db.connect()
     await db_utils.log_user_activity(user_id, activity_type='get_recommendation', theme_id=None)
+
+    # Initialize recommendation system
+    try:
+        recommendations = await rec_sys.recommend(user_id)
+
+        if not recommendations:
+            await message.answer('**Рекомендации пока недоступны.**', parse_mode="Markdown")
+            return
+
+    except Exception as e:
+        await message.answer(f"Ошибка при получении рекомендаций")
+        await db_utils.db.close()
+        return
+
     await db_utils.db.close()
-    await message.answer('**В разработке...**', parse_mode="Markdown")
+
+    response = "**Рекомендации на основе вашей истории:**\n\n"
+    book_count = 0
+    for theme in recommendations:
+        response += f"📚 *{theme['theme_name']} - {theme['specific_theme']}*\n\n"
+        for expert in theme['experts']:
+            if book_count >= 5:
+                break
+            expert_name = expert['expert_name']
+            expert_position = expert['expert_position']
+            book_name = expert['book_name']
+            description = expert['description']
+            response += f"👤 {expert_name} ({expert_position})\n"
+            response += f"📖 «{book_name}»\n💬 {description}\n\n"
+            book_count += 1
+
+        if book_count >= 5:
+            break
+
+        # Send message if length exceeds Telegram limit
+        if len(response) > 3000:
+            await message.answer(response, parse_mode="Markdown")
+            response = ""
+
+    if response:
+        await message.answer(response, parse_mode="Markdown")
 
 
 # Функция на будущее
 
-# # Обработчик кнопки "Подписка"
-# @start_router.message(F.text == "🔔 Подписка | Отписка")
-# async def handle_subscription(message: Message):
-#     await db_utils.db.connect()
-#     user_id = message.from_user.id
-#     is_sub = await db_utils.is_subscribed(user_id)
-#
-#     # Создаем инлайн-клавиатуру
-#     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-#         InlineKeyboardButton(
-#             text="Отписаться" if is_sub else "Подписаться",
-#             callback_data="unsubscribe" if is_sub else "subscribe"
-#         )
-#     ]])
-#
-#     await message.answer(
-#         text=f"Нажмите кнопку для "
-#              f"{'подписки на рассылку' if not is_sub else 'отписки от рассылки'}:",
-#         reply_markup=keyboard
-#     )
-#     await db_utils.db.close()
-#
-#
-# # Обработчик инлайн-кнопок подписки/отписки
-# @start_router.callback_query(F.data.in_(["subscribe", "unsubscribe"]))
-# async def process_subscription_callback(callback: CallbackQuery):
-#     await db_utils.db.connect()
-#     user_id = callback.from_user.id
-#     action = callback.data
-#
-#     # Определяем новое состояние подписки
-#
-#     # Логируем активность
-#     activity_type = "subscribe" if action == "subscribe" else "unsubscribe"
-#     await db_utils.log_user_activity(
-#         user_id=user_id,
-#         activity_type=activity_type,
-#         theme_id=None
-#     )
-#
-#     response_text = "Вы подписались!" if action == "subscribe" else "Вы отписались!"
-#
-#     try:
-#         # Удаляем сообщение бота
-#         await callback.message.delete()
-#     except TelegramBadRequest as e:
-#         # Обрабатываем возможные ошибки, например, если сообщение уже удалено
-#         pass
-#
-#     await callback.message.answer(response_text)
-#     await callback.answer()
-#     await db_utils.db.close()
+# Обработчик кнопки "Подписка"
+@start_router.message(F.text == "🔔 Подписка | Отписка")
+async def handle_subscription(message: Message):
+    await db_utils.db.connect()
+    user_id = message.from_user.id
+    is_sub = await db_utils.is_subscribed(user_id)
+
+    # Создаем инлайн-клавиатуру
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="Отписаться" if is_sub else "Подписаться",
+            callback_data="unsubscribe" if is_sub else "subscribe"
+        )
+    ]])
+
+    await message.answer(
+        text=f"Нажмите кнопку для "
+             f"{'подписки на рассылку' if not is_sub else 'отписки от рассылки'}:",
+        reply_markup=keyboard
+    )
+    await db_utils.db.close()
 
 
-@start_router.message(F.text == "📚 Рекомендация экспертов")
+# Обработчик инлайн-кнопок подписки/отписки
+@start_router.callback_query(F.data.in_(["subscribe", "unsubscribe"]))
+async def process_subscription_callback(callback: CallbackQuery):
+    await db_utils.db.connect()
+    user_id = callback.from_user.id
+    action = callback.data
+
+    # Определяем новое состояние подписки
+
+    # Логируем активность
+    activity_type = "subscribe" if action == "subscribe" else "unsubscribe"
+    await db_utils.log_user_activity(
+        user_id=user_id,
+        activity_type=activity_type,
+        theme_id=None
+    )
+
+    response_text = "Вы подписались!" if action == "subscribe" else "Вы отписались!"
+
+    try:
+        # Удаляем сообщение бота
+        await callback.message.delete()
+    except TelegramBadRequest as e:
+        # Обрабатываем возможные ошибки, например, если сообщение уже удалено
+        pass
+
+    await callback.message.answer(response_text)
+    await callback.answer()
+    await db_utils.db.close()
+
+
+@start_router.message(F.text == "📚 Подборки от экспертов")
 async def expert_recommendation(message: Message):
     await message.answer(
         "**Выберите тему для рекомендаций** 📖\nНажмите на кнопку ниже, чтобы начать:",
