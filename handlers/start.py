@@ -1,6 +1,7 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+import asyncio
 from db_handler.db_utils import DBUtils
 from db_handler.db_class import Database
 
@@ -30,13 +31,57 @@ async def cmd_start_3(message: Message):
     await message.answer('Привет! 😊 *Готов помочь!*')
 
 
+from recommendation_system.model import RecommendationSystem
+from db_handler.db_class import Database
+
 @start_router.message(F.text == "📝 Рекомендация")
 async def cmd_start_3(message: Message):
-    await db_utils.db.connect()
     user_id = message.from_user.id
-    await db_utils.log_user_activity(user_id, activity_type='get_recommenadation', theme_id=None)
+    await message.answer(f"Получение рекомендаций")
+
+    await db_utils.db.connect()
+    await db_utils.log_user_activity(user_id, activity_type='get_recomendation', theme_id=None)
+
+    # Initialize recommendation system
+    rec_sys = RecommendationSystem(db=Database())
+    try:
+        recommendations = await rec_sys.recommend(user_id)
+    except Exception as e:
+        await message.answer(f"Ошибка при получении рекомендаций")
+        await db_utils.db.close()
+        return
+
     await db_utils.db.close()
-    await message.answer('**В разработке...**', parse_mode="Markdown")
+
+    if not recommendations:
+        await message.answer('**Рекомендации пока недоступны.**', parse_mode="Markdown")
+        return
+
+    response = "**Рекомендации на основе вашей истории:**\n\n"
+    book_count = 0
+    for theme in recommendations:
+        response += f"📚 *{theme['theme_name']} - {theme['specific_theme']}*\n\n"
+        for expert in theme['experts']:
+            if book_count >= 5:
+                break
+            expert_name = expert['expert_name']
+            expert_position = expert['expert_position']
+            book_name = expert['book_name']
+            description = expert['description']
+            response += f"👤 {expert_name} ({expert_position})\n"
+            response += f"📖 «{book_name}»\n💬 {description}\n\n"
+            book_count += 1
+
+        if book_count >= 5:
+            break
+
+        # Send message if length exceeds Telegram limit
+        if len(response) > 3000:
+            await message.answer(response, parse_mode="Markdown")
+            response = ""
+
+    if response:
+        await message.answer(response, parse_mode="Markdown")
 
 
 @start_router.message(F.text == "📚 Рекомендация экспертов")
