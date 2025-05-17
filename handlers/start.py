@@ -78,58 +78,58 @@ async def cmd_recc(message: Message):
 
 # Функция на будущее
 
-# Обработчик кнопки "Подписка"
-@start_router.message(F.text == "🔔 Подписка | Отписка")
-async def handle_subscription(message: Message):
-    await db_utils.db.connect()
-    user_id = message.from_user.id
-    is_sub = await db_utils.is_subscribed(user_id)
-
-    # Создаем инлайн-клавиатуру
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text="Отписаться" if is_sub else "Подписаться",
-            callback_data="unsubscribe" if is_sub else "subscribe"
-        )
-    ]])
-
-    await message.answer(
-        text=f"Нажмите кнопку для "
-             f"{'подписки на рассылку' if not is_sub else 'отписки от рассылки'}:",
-        reply_markup=keyboard
-    )
-    await db_utils.db.close()
-
-
-# Обработчик инлайн-кнопок подписки/отписки
-@start_router.callback_query(F.data.in_(["subscribe", "unsubscribe"]))
-async def process_subscription_callback(callback: CallbackQuery):
-    await db_utils.db.connect()
-    user_id = callback.from_user.id
-    action = callback.data
-
-    # Определяем новое состояние подписки
-
-    # Логируем активность
-    activity_type = "subscribe" if action == "subscribe" else "unsubscribe"
-    await db_utils.log_user_activity(
-        user_id=user_id,
-        activity_type=activity_type,
-        theme_id=None
-    )
-
-    response_text = "Вы подписались!" if action == "subscribe" else "Вы отписались!"
-
-    try:
-        # Удаляем сообщение бота
-        await callback.message.delete()
-    except TelegramBadRequest as e:
-        # Обрабатываем возможные ошибки, например, если сообщение уже удалено
-        pass
-
-    await callback.message.answer(response_text)
-    await callback.answer()
-    await db_utils.db.close()
+# # Обработчик кнопки "Подписка"
+# @start_router.message(F.text == "🔔 Подписка | Отписка")
+# async def handle_subscription(message: Message):
+#     await db_utils.db.connect()
+#     user_id = message.from_user.id
+#     is_sub = await db_utils.is_subscribed(user_id)
+#
+#     # Создаем инлайн-клавиатуру
+#     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+#         InlineKeyboardButton(
+#             text="Отписаться" if is_sub else "Подписаться",
+#             callback_data="unsubscribe" if is_sub else "subscribe"
+#         )
+#     ]])
+#
+#     await message.answer(
+#         text=f"Нажмите кнопку для "
+#              f"{'подписки на рассылку' if not is_sub else 'отписки от рассылки'}:",
+#         reply_markup=keyboard
+#     )
+#     await db_utils.db.close()
+#
+#
+# # Обработчик инлайн-кнопок подписки/отписки
+# @start_router.callback_query(F.data.in_(["subscribe", "unsubscribe"]))
+# async def process_subscription_callback(callback: CallbackQuery):
+#     await db_utils.db.connect()
+#     user_id = callback.from_user.id
+#     action = callback.data
+#
+#     # Определяем новое состояние подписки
+#
+#     # Логируем активность
+#     activity_type = "subscribe" if action == "subscribe" else "unsubscribe"
+#     await db_utils.log_user_activity(
+#         user_id=user_id,
+#         activity_type=activity_type,
+#         theme_id=None
+#     )
+#
+#     response_text = "Вы подписались!" if action == "subscribe" else "Вы отписались!"
+#
+#     try:
+#         # Удаляем сообщение бота
+#         await callback.message.delete()
+#     except TelegramBadRequest as e:
+#         # Обрабатываем возможные ошибки, например, если сообщение уже удалено
+#         pass
+#
+#     await callback.message.answer(response_text)
+#     await callback.answer()
+#     await db_utils.db.close()
 
 
 @start_router.message(F.text == "📚 Подборки от экспертов")
