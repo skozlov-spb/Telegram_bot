@@ -96,26 +96,19 @@ async def init_db():
                     registration_date TIMESTAMP DEFAULT NOW()
                 );
                 
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    pref_id SERIAL PRIMARY KEY,
-                    user_id INT NOT NULL,
-                    theme_id INT NOT NULL,
-
-                    FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE,
-                    FOREIGN KEY(theme_id) REFERENCES themes (theme_id) ON DELETE CASCADE
+                CREATE TYPE activity_type AS ENUM (
+                    'start_bot',                  -- При начале использования бота --
+                    'get_expert_recommendation',  -- Получить экспертные рекомендации --
+                    'get_recommendation',         -- Получить рекомендации от бота --
+                    'subscribe',                  -- Флаг подписки человека --
+                    'unsubscribe'                 -- Флаг отписки --
                 );
                 
                 CREATE TABLE IF NOT EXISTS user_activity_logs (
                     log_id SERIAL PRIMARY KEY,
                     user_id INT NOT NULL,
                     request_time TIMESTAMP DEFAULT NOW(),
-                    request_type TEXT NOT NULL CHECK (request_type IN (
-                        'start_bot',  -- При начале использования бота --
-                        'get_expert_recommendation',  -- Получить экспертные рекомендации --
-                        'get_recomendation',  -- Получить рекомендации от бота --
-                        'subscribe',  -- Флаг подписки человека --
-                        'unsubscribe'  -- Флаг отписки --
-                    )),
+                    request_type activity_type,
                     theme_id INT DEFAULT NULL,
     
                     FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE,
