@@ -141,7 +141,7 @@ async def expert_recommendation(message: Message):
 
 
 # Обработчик для callback-запросов инлайн-кнопок экспертов
-@start_router.callback_query()
+@start_router.callback_query(F.data.in_(['get_themes']) | F.data.regexp(r'^(themes_page|theme|subthemes|subtheme|expert|page|index)_'))
 async def process_callback(callback: CallbackQuery):
     data = callback.data
     await db_utils.db.connect()
