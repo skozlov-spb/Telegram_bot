@@ -48,7 +48,6 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
         return
 
     if action == "admin_get_stats":
-        # Получение статистики (реализация не указана в запросе, можно добавить позже)
         stats = await db_utils.get_statistic()
         response = (
             f"📊 **Статистика**:\n"
