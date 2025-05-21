@@ -1,7 +1,7 @@
 import logging
-from typing import List, Optional, Dict, Union, Tuple
+from typing import List, Optional, Dict
 from datetime import datetime, timedelta
-
+import pandas as pd
 import asyncpg
 from asyncpg.pool import Pool
 
@@ -44,37 +44,7 @@ class DBUtils:
 
         self.db: Database = db
         self.bot: Bot = bot
-
-    async def check_user_subscription(
-            self,
-            user_id: int,
-            channel_id: int
-    ) -> bool:
-        """Проверка подписки пользователя на канал"""
-
-        try:
-            # Бот должен быть администратором
-            chat_member = await self.bot.get_chat_member(
-                chat_id=channel_id,
-                user_id=user_id
-            )
-            is_subscribe = chat_member.status in ['member', 'administrator', 'creator']
-            return is_subscribe
-
-        except TelegramBadRequest as exp:
-            # Пользователь не подписан
-            if "USER_NOT_PARTICIPANT" in str(exp):
-                return False
-
-            raise
-
-        except TelegramForbiddenError:
-            logger.error(f"Бот не является администратором в чате {channel_id}")
-            return False
-
-        except TelegramAPIError as exc:
-            logger.error(f"Telegram API error: {exc}")
-            raise
+        
 
     async def register_user(
             self,
@@ -307,38 +277,83 @@ class DBUtils:
         1. Общее число пользователей
         2. Процент неактивных пользователей
         3. Число подписанных на рассылку
+        4. Процент пользователей подписанных на корпоративные каналы до использования бота
         """
         try:
-            users = await self.db.fetch(
-                """
-                SELECT user_id FROM users
-                """
-            )
-            total_users = len(users)
+            
+            total_users = await self.db.fetchval("SELECT COUNT(*) FROM users")
 
             if total_users == 0:
                 return {
-                    "total_users": 0,
-                    "inactive_percent": 0.0,
-                    "subscribed_users": 0
-                }
+                "total_users": total_users,
+                "inactive_percent": 0.0,
+                "subscribed_users": 0,
+                "spbu_percent": 0.0,
+                "landau_percent": 0.0,
+                "both_percent": 0.0
+            }
 
-            inactive_count = 0
-            subscribed_count = 0
-
-            for user in users:
-                user_id = user['user_id']
-                if not await self.is_active(user_id):
-                    inactive_count += 1
-                if await self.is_subscribed(user_id):
-                    subscribed_count += 1
-
+            inactive_count = await self.db.fetchval(
+                """
+                SELECT COUNT(*) 
+                FROM users 
+                WHERE user_id NOT IN (
+                    SELECT user_id 
+                    FROM user_activity_logs 
+                    WHERE request_time > NOW() - INTERVAL '3 months'
+                )
+                """
+            )
             inactive_percent = round((inactive_count / total_users) * 100, 2)
 
+            subscribed_count = await self.db.fetchval(
+                """
+                SELECT COUNT(DISTINCT user_id)
+                FROM (
+                    SELECT 
+                        user_id,
+                        request_type,
+                        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY request_time DESC) AS rn
+                    FROM user_activity_logs
+                    WHERE request_type IN ('subscribe', 'unsubscribe')
+                ) AS sub
+                WHERE rn = 1 AND request_type = 'subscribe'
+                """
+            )
+            
+            channel_stats = await self.db.fetchrow(
+                """
+                WITH spbu_users AS (
+                    SELECT DISTINCT user_id 
+                    FROM user_activity_logs 
+                    WHERE request_type = 'presubscribed_spbu_true'
+                ), landau_users AS (
+                    SELECT DISTINCT user_id 
+                    FROM user_activity_logs 
+                    WHERE request_type = 'presubscribed_landau_true'
+                ), both_users AS (
+                    SELECT user_id FROM spbu_users
+                    INTERSECT
+                    SELECT user_id FROM landau_users
+                )
+                SELECT 
+                    (SELECT COUNT(*) FROM spbu_users)::FLOAT as spbu,
+                    (SELECT COUNT(*) FROM landau_users)::FLOAT as landau,
+                    (SELECT COUNT(*) FROM both_users)::FLOAT as both
+                """
+            )
+            
+            spbu_percent = round((channel_stats['spbu'] / total_users) * 100, 2)
+            landau_percent = round((channel_stats['landau'] / total_users) * 100, 2)
+            both_percent = round((channel_stats['both'] / total_users) * 100, 2)
+            
             return {
                 "total_users": total_users,
                 "inactive_percent": inactive_percent,
-                "subscribed_users": subscribed_count
+                "subscribed_users": subscribed_count,
+                "spbu_percent": spbu_percent,
+                "landau_percent": landau_percent,
+                "both_percent": both_percent
             }
 
         except Exception as exc:
@@ -346,7 +361,10 @@ class DBUtils:
             return {
                 "total_users": 0,
                 "inactive_percent": 0.0,
-                "subscribed_users": 0
+                "subscribed_users": 0,
+                "spbu_percent": 0.0,
+                "landau_percent": 0.0,
+                "both_percent": 0.0
             }
 
     async def get_theme_id(
@@ -378,3 +396,116 @@ class DBUtils:
         except Exception as exc:
             logger.error(f"Ошибка получения theme_id для {theme_name}/{subtheme_name}: {exc}")
             return None
+
+
+    async def upload_data(self, file_path: str) -> bool:
+        """
+        Загрузка данных из Excel-файла в базу данных.
+
+        :param file_path: Путь к Excel-файлу с данными
+        :return: True при успешной загрузке, False при ошибке
+        """
+        try:
+            experts = pd.read_excel(
+                file_path,
+                names=[
+                    "expert_name",
+                    "expert_position",
+                    "general_theme",
+                    "specific_theme",
+                    "book_name",
+                    "description",
+                ],
+            ).dropna(subset=["expert_name"])
+
+            grouped = experts.groupby([
+                'expert_name',
+                'expert_position',
+                'general_theme',
+                'specific_theme'
+            ], as_index=False).agg({
+                'book_name': list,
+                'description': list
+            })
+
+            cache = {
+                'experts': {},
+                'themes': {},
+                'books': {}
+            }
+
+            async with self.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    for _, row in grouped.iterrows():
+                        expert_key = (row['expert_name'].strip(), row['expert_position'].strip())
+                        if expert_key not in cache['experts']:
+                            expert_id = await conn.fetchval(
+                                """
+                                INSERT INTO experts (expert_name, expert_position)
+                                VALUES ($1, $2)
+                                ON CONFLICT (expert_name, expert_position) DO NOTHING
+                                RETURNING expert_id
+                                """,
+                                *expert_key
+                            )
+                            if not expert_id:
+                                expert_id = await conn.fetchval(
+                                    "SELECT expert_id FROM experts WHERE expert_name = $1 AND expert_position = $2",
+                                    *expert_key
+                                )
+                            cache['experts'][expert_key] = expert_id
+
+                        theme_key = (row['general_theme'].strip(), row['specific_theme'].strip())
+                        if theme_key not in cache['themes']:
+                            theme_id = await conn.fetchval(
+                                """
+                                INSERT INTO themes (theme_name, specific_theme)
+                                VALUES ($1, $2)
+                                ON CONFLICT (theme_name, specific_theme) DO NOTHING
+                                RETURNING theme_id
+                                """,
+                                *theme_key
+                            )
+                            if not theme_id:
+                                theme_id = await conn.fetchval(
+                                    "SELECT theme_id FROM themes WHERE theme_name = $1 AND specific_theme = $2",
+                                    *theme_key
+                                )
+                            cache['themes'][theme_key] = theme_id
+
+                        for book_name, description in zip(row['book_name'], row['description']):
+                            book_name = book_name.strip()
+                            if book_name not in cache['books']:
+                                book_id = await conn.fetchval(
+                                    """
+                                    INSERT INTO books (book_name)
+                                    VALUES ($1)
+                                    ON CONFLICT (book_name) DO NOTHING
+                                    RETURNING book_id
+                                    """,
+                                    book_name
+                                )
+                                if not book_id:
+                                    book_id = await conn.fetchval(
+                                        "SELECT book_id FROM books WHERE book_name = $1",
+                                        book_name
+                                    )
+                                cache['books'][book_name] = book_id
+
+                            await conn.execute(
+                                """
+                                INSERT INTO experts_recommendations 
+                                (expert_id, theme_id, book_id, description)
+                                VALUES ($1, $2, $3, $4)
+                                ON CONFLICT DO NOTHING
+                                """,
+                                cache['experts'][expert_key],
+                                cache['themes'][theme_key],
+                                cache['books'][book_name],
+                                description.strip()
+                            )
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка загрузки данных: {e}")
+            return False
+
