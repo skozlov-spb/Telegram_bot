@@ -53,10 +53,7 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
             f"📊 **Статистика**:\n"
             f"Всего пользователей: {stats['total_users']}\n"
             f"Неактивные пользователи: {stats['inactive_percent']}%\n"
-            f"Подписанные на рассылку: {stats['subscribed_users']}\n"
-            f"Подписаны на SPBU: {stats['spbu_percent']}%\n"
-            f"Подписаны на Landau: {stats['landau_percent']}%\n"
-            f"Подписаны на оба канала: {stats['both_percent']}%"
+            f"Подписанные на рассылку: {stats['subscribed_users']}"
         )
         await callback.message.answer(response, parse_mode="Markdown")
 

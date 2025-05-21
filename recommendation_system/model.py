@@ -12,7 +12,7 @@ class RecommendationSystem:
     def __init__(self, db, model_name: str = ModelName):
         self.db = db
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
+        self.model = SentenceTransformer(model_name, device='cpu')
         self.theme_embeddings_cache: Optional[np.ndarray] = None
         self.theme_id_to_index = {}
         self.index_to_theme_id = {}

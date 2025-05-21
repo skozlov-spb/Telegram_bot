@@ -277,25 +277,21 @@ class DBUtils:
         1. Общее число пользователей
         2. Процент неактивных пользователей
         3. Число подписанных на рассылку
-        4. Процент пользователей подписанных на корпоративные каналы до использования бота
         """
         try:
             
-            total_users = await self.db.fetchval("SELECT COUNT(*) FROM users")
+            total_users = await self.db.fetchrow("SELECT COUNT(*) FROM users")
 
             if total_users == 0:
                 return {
                 "total_users": total_users,
                 "inactive_percent": 0.0,
                 "subscribed_users": 0,
-                "spbu_percent": 0.0,
-                "landau_percent": 0.0,
-                "both_percent": 0.0
             }
 
-            inactive_count = await self.db.fetchval(
+            inactive_count = await self.db.fetchrow(
                 """
-                SELECT COUNT(*) 
+                SELECT COUNT(*)
                 FROM users 
                 WHERE user_id NOT IN (
                     SELECT user_id 
@@ -304,9 +300,9 @@ class DBUtils:
                 )
                 """
             )
-            inactive_percent = round((inactive_count / total_users) * 100, 2)
+            inactive_percent = round((inactive_count['count'] / total_users['count']) * 100, 2)
 
-            subscribed_count = await self.db.fetchval(
+            subscribed_count = await self.db.fetchrow(
                 """
                 SELECT COUNT(DISTINCT user_id)
                 FROM (
@@ -320,40 +316,11 @@ class DBUtils:
                 WHERE rn = 1 AND request_type = 'subscribe'
                 """
             )
-            
-            channel_stats = await self.db.fetchrow(
-                """
-                WITH spbu_users AS (
-                    SELECT DISTINCT user_id 
-                    FROM user_activity_logs 
-                    WHERE request_type = 'presubscribed_spbu_true'
-                ), landau_users AS (
-                    SELECT DISTINCT user_id 
-                    FROM user_activity_logs 
-                    WHERE request_type = 'presubscribed_landau_true'
-                ), both_users AS (
-                    SELECT user_id FROM spbu_users
-                    INTERSECT
-                    SELECT user_id FROM landau_users
-                )
-                SELECT 
-                    (SELECT COUNT(*) FROM spbu_users)::FLOAT as spbu,
-                    (SELECT COUNT(*) FROM landau_users)::FLOAT as landau,
-                    (SELECT COUNT(*) FROM both_users)::FLOAT as both
-                """
-            )
-            
-            spbu_percent = round((channel_stats['spbu'] / total_users) * 100, 2)
-            landau_percent = round((channel_stats['landau'] / total_users) * 100, 2)
-            both_percent = round((channel_stats['both'] / total_users) * 100, 2)
-            
+
             return {
-                "total_users": total_users,
+                "total_users": total_users['count'],
                 "inactive_percent": inactive_percent,
-                "subscribed_users": subscribed_count,
-                "spbu_percent": spbu_percent,
-                "landau_percent": landau_percent,
-                "both_percent": both_percent
+                "subscribed_users": subscribed_count['count'],
             }
 
         except Exception as exc:
@@ -362,9 +329,6 @@ class DBUtils:
                 "total_users": 0,
                 "inactive_percent": 0.0,
                 "subscribed_users": 0,
-                "spbu_percent": 0.0,
-                "landau_percent": 0.0,
-                "both_percent": 0.0
             }
 
     async def get_theme_id(
