@@ -209,36 +209,6 @@ class DBUtils:
             logger.error(f"Ошибка получения рекомендаций для подтемы '{subtheme_name}': {exc}")
             return None
 
-    async def is_subscribed(
-            self,
-            user_id: int
-    ) -> bool:
-        """
-        Проверка, подписан ли пользователь на рассылку.
-        Последняя активность должна быть 'subscribe' для подписки.
-        """
-        try:
-            result = await self.db.fetchrow(
-                """
-                SELECT 
-                    request_type 
-                FROM user_activity_logs 
-                WHERE user_id = $1 AND request_type IN ('subscribe', 'unsubscribe') 
-                ORDER BY request_time DESC 
-                LIMIT 1
-                """,
-                user_id
-            )
-
-            if result and result['request_type'] == 'subscribe':
-                return True
-
-            return False
-
-        except Exception as exc:
-            logger.error(f"Ошибка при проверке подписки пользователя {user_id}: {exc}")
-            return False
-
     async def is_active(
             self,
             user_id: int
@@ -509,3 +479,138 @@ class DBUtils:
             logger.error(f"Ошибка загрузки данных: {e}")
             return False
 
+    async def delete_book(self, book_name: str) -> bool:
+        """
+        Удаление книги по названию.
+
+        :param book_name: Название книги для удаления
+        :return: True при успешном удалении, False при ошибке или если книга не найдена
+        """
+        try:
+            async with self.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        """
+                        DELETE FROM experts_recommendations 
+                        WHERE book_id IN (
+                            SELECT book_id FROM books WHERE book_name = $1
+                        )
+                        """,
+                        book_name
+                    )
+                    result = await conn.execute(
+                        """
+                        DELETE FROM books 
+                        WHERE book_name = $1
+                        """,
+                        book_name
+                    )
+                    if result == "DELETE 0":
+                        logger.warning(f"Книга '{book_name}' не найдена")
+                        return False
+                    logger.info(f"Книга '{book_name}' успешно удалена")
+                    return True
+        except Exception as exc:
+            logger.error(f"Ошибка при удалении книги '{book_name}': {exc}")
+            return False
+
+    async def delete_selection(self, theme_name: str, subtheme_name: str) -> bool:
+        """
+        Удаление подборки по названию темы и подтемы.
+
+        :param theme_name: Название общей темы
+        :param subtheme_name: Название подтемы
+        :return: True при успешном удалении, False при ошибке или если подборка не найдена
+        """
+        try:
+            async with self.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        """
+                        DELETE FROM experts_recommendations 
+                        WHERE theme_id IN (
+                            SELECT theme_id FROM themes 
+                            WHERE theme_name = $1 AND specific_theme = $2
+                        )
+                        """,
+                        theme_name, subtheme_name
+                    )
+                    result = await conn.execute(
+                        """
+                        DELETE FROM themes 
+                        WHERE theme_name = $1 AND specific_theme = $2
+                        """,
+                        theme_name, subtheme_name
+                    )
+                    if result == "DELETE 0":
+                        logger.warning(f"Подборка '{theme_name}/{subtheme_name}' не найдена")
+                        return False
+                    logger.info(f"Подборка '{theme_name}/{subtheme_name}' успешно удалена")
+                    return True
+        except Exception as exc:
+            logger.error(f"Ошибка при удалении подборки '{theme_name}/{subtheme_name}': {exc}")
+            return False
+
+    async def delete_expert(self, expert_name: str, expert_position: str) -> bool:
+        """
+        Удаление эксперта по имени и должности.
+
+        :param expert_name: Имя эксперта
+        :param expert_position: Должность эксперта
+        :return: True при успешном удалении, False при ошибке или если эксперт не найден
+        """
+        try:
+            async with self.db.pool.acquire() as conn:
+                async with conn.transaction():
+                    await conn.execute(
+                        """
+                        DELETE FROM experts_recommendations 
+                        WHERE expert_id IN (
+                            SELECT expert_id FROM experts 
+                            WHERE expert_name = $1 AND expert_position = $2
+                        )
+                        """,
+                        expert_name, expert_position
+                    )
+                    result = await conn.execute(
+                        """
+                        DELETE FROM experts 
+                        WHERE expert_name = $1 AND expert_position = $2
+                        """,
+                        expert_name, expert_position
+                    )
+                    if result == "DELETE 0":
+                        logger.warning(f"Эксперт '{expert_name}, {expert_position}' не найден")
+                        return False
+                    logger.info(f"Эксперт '{expert_name}, {expert_position}' успешно удален")
+                    return True
+        except Exception as exc:
+            logger.error(f"Ошибка при удалении эксперта '{expert_name}, {expert_position}': {exc}")
+            return False
+
+    async def get_subscribed_users(self) -> List[int]:
+        """
+        Получение списка ID подписанных пользователей.
+
+        :return: Список ID пользователей, у которых последняя активность 'subscribe'
+        """
+        try:
+            result = await self.db.fetch(
+                """
+                SELECT DISTINCT user_id
+                FROM (
+                    SELECT 
+                        user_id,
+                        request_type,
+                        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY request_time DESC) AS rn
+                    FROM user_activity_logs
+                    WHERE request_type IN ('subscribe', 'unsubscribe')
+                ) AS sub
+                WHERE rn = 1 AND request_type = 'subscribe'
+                """
+            )
+            return [row['user_id'] for row in result]
+        except Exception as exc:
+            logger.error(f"Ошибка при получении списка подписанных пользователей: {exc}")
+            return []
+        
