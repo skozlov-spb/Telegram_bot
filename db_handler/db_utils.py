@@ -462,12 +462,21 @@ class DBUtils:
                         """,
                         book_name
                     )
+                    
                     result = await conn.execute(
                         """
                         DELETE FROM books 
                         WHERE book_name = $1
                         """,
                         book_name
+                    )
+                    await conn.execute(
+                        """
+                        DELETE FROM themes
+                        WHERE theme_id NOT IN (
+                            SELECT theme_id FROM experts_recommendations
+                        )
+                        """
                     )
                     if result == "DELETE 0":
                         logger.warning(f"Книга '{book_name}' не найдена")
@@ -506,7 +515,7 @@ class DBUtils:
                         """,
                         theme_name, subtheme_name
                     )
-                    if result.rowcount == 0:
+                    if result == "DELETE 0":
                         logger.warning(f"Подборка '{theme_name}/{subtheme_name}' не найдена")
                         return False
                     logger.info(f"Подборка '{theme_name}/{subtheme_name}' успешно удалена")
@@ -543,6 +552,14 @@ class DBUtils:
                         """,
                         expert_name, expert_position
                     )
+                    await conn.execute(
+                    """
+                    DELETE FROM themes
+                    WHERE theme_id NOT IN (
+                        SELECT theme_id FROM experts_recommendations
+                    )
+                    """
+                )
                     if result == "DELETE 0":
                         logger.warning(f"Эксперт '{expert_name}, {expert_position}' не найден")
                         return False
