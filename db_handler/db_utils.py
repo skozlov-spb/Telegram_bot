@@ -506,7 +506,7 @@ class DBUtils:
                         """,
                         theme_name, subtheme_name
                     )
-                    if result == "DELETE 0":
+                    if result.rowcount == 0:
                         logger.warning(f"Подборка '{theme_name}/{subtheme_name}' не найдена")
                         return False
                     logger.info(f"Подборка '{theme_name}/{subtheme_name}' успешно удалена")
@@ -578,3 +578,22 @@ class DBUtils:
             logger.error(f"Ошибка при получении списка подписанных пользователей: {exc}")
             return []
         
+async def get_available_experts(self) -> List[str]:
+        """Получение списка экспертов + должностей
+            return: [[имя, должность]...]
+        """
+
+        try:
+            result = await self.db.fetch(
+                """
+                SELECT 
+                    expert_name, expert_position
+                FROM experts
+                ORDER BY expert_name
+                """
+            )
+            return [[row['expert_name'], row['expert_position']] for row in result]
+
+        except Exception as exc:
+            logger.error(f"Ошибка получения тем: {exc}")
+            return []
