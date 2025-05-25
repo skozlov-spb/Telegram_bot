@@ -4,6 +4,7 @@ from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.chat_action import ChatActionSender
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from create_bot import admins, bot
 from keyboards.all_keyboards import admin_panel_kb
 from db_handler.db_utils import DBUtils
@@ -22,8 +23,6 @@ if not os.path.exists(DATA_DIR):
 class AdminActions(StatesGroup):
     waiting_for_file = State()
     waiting_book_name = State()
-    waiting_theme_data = State()
-    waiting_expert_data = State()
 
 
 @admin_router.message((F.text.endswith("Админ панель")) & (F.from_user.id.in_(admins)))
@@ -36,7 +35,7 @@ async def admin_panel(message: Message):
 
 
 @admin_router.callback_query(F.data.in_(
-    ['admin_get_stats', 'admin_upload_data', 'admin_delete_book', 'admin_delete_selection', 'admin_delete_expert']))
+    ['admin_get_stats', 'admin_upload_data', 'admin_delete_book']))
 async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.connect()
     action = callback.data
@@ -68,13 +67,196 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
         await state.set_state(AdminActions.waiting_book_name)
         await callback.message.answer("📝 Введите название книги для удаления:")
 
-    elif action == "admin_delete_selection":
-        await state.set_state(AdminActions.waiting_theme_data)
-        await callback.message.answer("📝 Введите тему и подтему через '|' (пример: Физика|Квантовая механика):")
+    await callback.answer()
+    await db_utils.db.close()
 
-    elif action == "admin_delete_expert":
-        await state.set_state(AdminActions.waiting_expert_data)
-        await callback.message.answer("📝 Введите имя эксперта и должность через '|' (пример: Иван Иванов|Профессор):")
+
+@admin_router.callback_query(F.data.in_(['admin_select_theme']) |
+                            F.data.regexp(r'^(admin_themes_page|admin_theme|admin_subthemes|admin_delete_subtheme)_'))
+async def process_theme_selection(callback: CallbackQuery):
+    await db_utils.db.connect()
+    user_id = callback.from_user.id
+
+    if user_id not in admins:
+        await callback.message.answer("У вас нет доступа к админ-панели.")
+        await callback.answer()
+        await db_utils.db.close()
+        return
+
+    action = callback.data
+
+    if action == "admin_select_theme" or action.startswith("admin_themes_page_"):
+        # Пагинация тем
+        if action == "admin_select_theme":
+            page = 0
+        else:
+            page = int(action.split("_")[-1])
+        items_per_page = 5
+
+        themes = await db_utils.get_available_themes()
+        if not themes:
+            await callback.message.answer("⚠️ *Темы отсутствуют.*", parse_mode="Markdown")
+            await callback.answer()
+            await db_utils.db.close()
+            return
+
+        total_pages = (len(themes) + items_per_page - 1) // items_per_page
+        start_idx = page * items_per_page
+        end_idx = min(start_idx + items_per_page, len(themes))
+        current_themes = themes[start_idx:end_idx]
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"admin_theme_{current_themes.index(theme) + start_idx}")]
+            for theme in current_themes
+        ])
+
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(InlineKeyboardButton(text="◄ Назад", callback_data=f"admin_themes_page_{page - 1}"))
+        if page < total_pages - 1:
+            nav_buttons.append(InlineKeyboardButton(text="Вперёд ►", callback_data=f"admin_themes_page_{page + 1}"))
+        if nav_buttons:
+            keyboard.inline_keyboard.append(nav_buttons)
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")])
+
+        await callback.message.edit_text("**Выберите тему для удаления** 📚\n*Доступные категории:*",
+                                        reply_markup=keyboard, parse_mode="Markdown")
+
+    elif action.startswith("admin_theme_") or action.startswith("admin_subthemes_"):
+        # Пагинация подтем
+        if action.startswith("admin_theme_"):
+            theme_id = action[len("admin_theme_"):]
+            page = 0
+        else:
+            theme_id, page = action[len("admin_subthemes_"):].split("_")
+            page = int(page)
+
+        theme_id = int(theme_id)
+        items_per_page = 5
+
+        themes = await db_utils.get_available_themes()
+        theme_name = themes[theme_id]
+        subthemes = await db_utils.get_subthemes(theme_name)
+        if not subthemes:
+            await callback.message.answer(f"⚠️ *Подтемы для __{theme_name}__ не найдены.*", parse_mode="Markdown")
+            await callback.answer()
+            await db_utils.db.close()
+            return
+
+        total_pages = (len(subthemes) + items_per_page - 1) // items_per_page
+        start_idx = page * items_per_page
+        end_idx = min(start_idx + items_per_page, len(subthemes))
+        current_subthemes = subthemes[start_idx:end_idx]
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"📋 {subtheme}",
+                                 callback_data=f"admin_delete_subtheme_{current_subthemes.index(subtheme) + start_idx}_{theme_id}")]
+            for subtheme in current_subthemes
+        ])
+
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(
+                InlineKeyboardButton(text="◄ Назад", callback_data=f"admin_subthemes_{theme_id}_{page - 1}"))
+        if page < total_pages - 1:
+            nav_buttons.append(
+                InlineKeyboardButton(text="Вперёд ►", callback_data=f"admin_subthemes_{theme_id}_{page + 1}"))
+        if nav_buttons:
+            keyboard.inline_keyboard.append(nav_buttons)
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")])
+
+        await callback.message.edit_text(f"**Подтемы для __{theme_name}__** 📋\n*Выберите подтему для удаления:*",
+                                        reply_markup=keyboard, parse_mode="Markdown")
+
+    elif action.startswith("admin_delete_subtheme_"):
+        subtheme_id, theme_id = action[len("admin_delete_subtheme_"):].split("_")
+        subtheme_id = int(subtheme_id)
+        theme_id = int(theme_id)
+
+        themes = await db_utils.get_available_themes()
+        theme_name = themes[theme_id]
+        subthemes = await db_utils.get_subthemes(theme_name)
+        subtheme_name = subthemes[subtheme_id]
+
+        success = await db_utils.delete_selection(theme_name, subtheme_name)
+        if success:
+            await callback.message.edit_text(f"✅ Подборка '{theme_name}/{subtheme_name}' успешно удалена!",
+                                            parse_mode="Markdown")
+        else:
+            await callback.message.edit_text(f"❌ Не удалось удалить подборку '{theme_name}/{subtheme_name}'",
+                                            parse_mode="Markdown")
+
+    await callback.answer()
+    await db_utils.db.close()
+
+
+@admin_router.callback_query(F.data.in_(['admin_select_expert']) |
+                            F.data.regexp(r'^(admin_experts_page|admin_delete_expert)_'))
+async def process_expert_selection(callback: CallbackQuery):
+    await db_utils.db.connect()
+    user_id = callback.from_user.id
+
+    if user_id not in admins:
+        await callback.message.answer("У вас нет доступа к админ-панели.")
+        await callback.answer()
+        await db_utils.db.close()
+        return
+
+    action = callback.data
+
+    if action == "admin_select_expert" or action.startswith("admin_experts_page_"):
+        # Пагинация экспертов
+        if action == "admin_select_expert":
+            page = 0
+        else:
+            page = int(action.split("_")[-1])
+        items_per_page = 5
+
+        experts = await db_utils.get_available_experts()
+        if not experts:
+            await callback.message.answer("⚠️ *Эксперты отсутствуют.*", parse_mode="Markdown")
+            await callback.answer()
+            await db_utils.db.close()
+            return
+
+        total_pages = (len(experts) + items_per_page - 1) // items_per_page
+        start_idx = page * items_per_page
+        end_idx = min(start_idx + items_per_page, len(experts))
+        current_experts = experts[start_idx:end_idx]
+
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"👤 {expert[0]} ({expert[1]})",
+                                 callback_data=f"admin_delete_expert_{current_experts.index(expert) + start_idx}")]
+            for expert in current_experts
+        ])
+
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(InlineKeyboardButton(text="◄ Назад", callback_data=f"admin_experts_page_{page - 1}"))
+        if page < total_pages - 1:
+            nav_buttons.append(InlineKeyboardButton(text="Вперёд ►", callback_data=f"admin_experts_page_{page + 1}"))
+        if nav_buttons:
+            keyboard.inline_keyboard.append(nav_buttons)
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")])
+
+        await callback.message.edit_text("**Выберите эксперта для удаления** 👤\n*Доступные эксперты:*",
+                                        reply_markup=keyboard, parse_mode="Markdown")
+
+    elif action.startswith("admin_delete_expert_"):
+        expert_id = int(action[len("admin_delete_expert_"):])
+        experts = await db_utils.get_available_experts()
+        expert_name, expert_position = experts[expert_id]
+
+        success = await db_utils.delete_expert(expert_name, expert_position)
+        if success:
+            await callback.message.edit_text(f"✅ Эксперт '{expert_name} ({expert_position})' успешно удален!",
+                                            parse_mode="Markdown")
+        else:
+            await callback.message.edit_text(f"❌ Не удалось удалить эксперта '{expert_name} ({expert_position})'",
+                                            parse_mode="Markdown")
 
     await callback.answer()
     await db_utils.db.close()
@@ -121,46 +303,8 @@ async def process_book_name(message: Message, state: FSMContext):
     else:
         await message.answer(f"❌ Не удалось удалить книгу '{book_name}'")
     await state.clear()
-    await db_utils.close()
-
-
-@admin_router.message(AdminActions.waiting_theme_data, F.from_user.id.in_(admins))
-async def process_theme_data(message: Message, state: FSMContext):
-    await db_utils.db.connect()
-    try:
-        theme_name, subtheme_name = message.text.split('|', 1)
-        success = await db_utils.delete_selection(
-            theme_name.strip(),
-            subtheme_name.strip()
-        )
-        if success:
-            await message.answer(f"✅ Подборка '{theme_name.strip()}/{subtheme_name.strip()}' удалена!")
-        else:
-            await message.answer("❌ Подборка не найдена или произошла ошибка")
-    except ValueError:
-        await message.answer("❌ Неверный формат. Пример: Физика|Квантовая механика")
-    await state.clear()
     await db_utils.db.close()
 
-
-
-@admin_router.message(AdminActions.waiting_expert_data, F.from_user.id.in_(admins))
-async def process_expert_data(message: Message, state: FSMContext):
-    await db_utils.db.connect()
-    try:
-        expert_name, expert_position = message.text.split('|', 1)
-        success = await db_utils.delete_expert(
-            expert_name.strip(),
-            expert_position.strip()
-        )
-        if success:
-            await message.answer(f"✅ Эксперт '{expert_name.strip}' удален!")
-        else:
-            await message.answer("❌ Эксперт не найден или произошла ошибка")
-    except ValueError:
-        await message.answer("❌ Неверный формат. Пример: Иван Иванов|Профессор")
-    await state.clear()
-    await db_utils.db.close()
 
 @admin_router.message(AdminActions.waiting_for_file)
 async def invalid_file_type(message: Message, state: FSMContext):

@@ -595,7 +595,7 @@ class DBUtils:
             logger.error(f"Ошибка при получении списка подписанных пользователей: {exc}")
             return []
         
-async def get_available_experts(self) -> List[str]:
+    async def get_available_experts(self) -> List[str]:
         """Получение списка экспертов + должностей
             return: [[имя, должность]...]
         """
