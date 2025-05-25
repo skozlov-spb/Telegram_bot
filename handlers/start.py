@@ -282,7 +282,7 @@ async def process_callback(callback: CallbackQuery):
                                          theme_id=theme_id)
 
         response = f"*Рекомендации для {subtheme_name}* 📚\n\n"
-        response += f"👤 **{info['name']}** — *{info['position'][0].lower() + info['position'][1:]}.*\n\n"
+        response += f"👤 **{info['name']}** — *{info['position'][0] + info['position'][1:]}.*\n\n"
         response += "__Книги:__\n"
         for book_id, description in info['books']:
             # Получение названия книги по book_id

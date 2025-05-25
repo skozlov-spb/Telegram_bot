@@ -34,10 +34,15 @@ def themes_inline_kb():
     return keyboard
 
 
+
 def admin_panel_kb():
-    """ Создаем инлайн-клавиатуру с кнопками "Получить статистику" и "Загрузить данные" """
     admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Получить статистику", callback_data="admin_get_stats")],
-        [InlineKeyboardButton(text="📤 Загрузить данные", callback_data="admin_upload_data")]
+        [InlineKeyboardButton(text="📤 Загрузить данные", callback_data="admin_upload_data")],
+        [
+            InlineKeyboardButton(text="❌ Книгу", callback_data="admin_delete_book"),
+            InlineKeyboardButton(text="❌ Подборку", callback_data="admin_delete_selection"),
+            InlineKeyboardButton(text="❌ Эксперта", callback_data="admin_delete_expert")
+        ]
     ])
     return admin_keyboard
