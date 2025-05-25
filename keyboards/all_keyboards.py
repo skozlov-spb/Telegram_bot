@@ -6,7 +6,7 @@ from create_bot import admins, bot, dp
 
 def main_kb(user_telegram_id: int):
     kb_list = [
-        [KeyboardButton(text="📝 Рекомендации"), KeyboardButton(text="📚 Подборки от экспертов"), ]
+        [KeyboardButton(text="📚 Подборки от экспертов"), KeyboardButton(text="📝 Рекомендации"), ]
         # Кнопка на будущее: KeyboardButton(text="🔔 Подписка | Отписка")
     ]
     if user_telegram_id in admins:
@@ -32,3 +32,12 @@ def themes_inline_kb():
         [InlineKeyboardButton(text="Получить темы", callback_data="get_themes")]
     ])
     return keyboard
+
+
+def admin_panel_kb():
+    """ Создаем инлайн-клавиатуру с кнопками "Получить статистику" и "Загрузить данные" """
+    admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📊 Получить статистику", callback_data="admin_get_stats")],
+        [InlineKeyboardButton(text="📤 Загрузить данные", callback_data="admin_upload_data")]
+    ])
+    return admin_keyboard

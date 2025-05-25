@@ -1,5 +1,7 @@
 from typing import Dict, List, Optional
+from functools import partial
 import numpy as np
+import asyncio
 import torch
 from sentence_transformers import SentenceTransformer, util
 
@@ -10,13 +12,13 @@ class RecommendationSystem:
     def __init__(self, db, model_name: str = ModelName):
         self.db = db
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
-        self.theme_embeddings_cache = None
+        self.model = SentenceTransformer(model_name, device='cpu')
+        self.theme_embeddings_cache: Optional[np.ndarray] = None
         self.theme_id_to_index = {}
         self.index_to_theme_id = {}
-        self.specific_themes = []
+        self.specific_themes: List[str] = []
 
-    def _embed_texts(self, texts: List[str]) -> np.ndarray:
+    def _embed_texts_sync(self, texts: List[str]) -> np.ndarray:
         """Generate BERT embeddings for a list of texts."""
         all_embeddings = []
         batch_size = 16
@@ -26,6 +28,20 @@ class RecommendationSystem:
                 embeddings = self.model.encode(batch_texts, show_progress_bar=False)
                 all_embeddings.append(embeddings)
         return np.vstack(all_embeddings)
+    
+    async def _embed_texts(self, texts: List[str]) -> np.ndarray:
+        """Asynchronous wrapper for generating BERT embeddings."""
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,                      
+            partial(self._embed_texts_sync, texts),
+        )
+    
+    async def _cos_sim(self, a: torch.Tensor, b: torch.Tensor) -> np.ndarray:
+        """Asynchronous wrapper for comparing cosine distances."""
+        loop = asyncio.get_running_loop()
+        similarities = await loop.run_in_executor(None, util.cos_sim, a, b)
+        return similarities[0].numpy()
 
     async def _load_theme_embeddings(self):
         """Load all specific_theme texts and compute embeddings, cache them."""
@@ -45,7 +61,7 @@ class RecommendationSystem:
             self.index_to_theme_id[idx] = row['theme_id']
             self.specific_themes.append(row['specific_theme'])
 
-        self.theme_embeddings_cache = self._embed_texts(self.specific_themes)
+        self.theme_embeddings_cache = await self._embed_texts(self.specific_themes)
 
     async def get_user_history_embedding(self, user_id: int) -> Optional[np.ndarray]:
         """Aggregate embeddings of specific_themes from the last 12 user interactions."""
@@ -91,7 +107,9 @@ class RecommendationSystem:
             return []
 
         # Compute cosine similarity between user embedding and all theme embeddings
-        similarities = util.cos_sim(torch.tensor(user_embedding), torch.tensor(self.theme_embeddings_cache))[0].numpy()
+        similarities = await self._cos_sim(
+            torch.tensor(user_embedding), torch.tensor(self.theme_embeddings_cache)
+        )
 
         # Exclude themes user already interacted with
         await self.db.connect()

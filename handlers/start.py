@@ -12,7 +12,7 @@ from create_bot import bot
 start_router = Router()
 
 db = Database()
-rec_sys = RecommendationSystem(db=Database())
+rec_sys = RecommendationSystem(db=db)
 db_utils = DBUtils(db=db, bot=bot)
 
 
@@ -52,7 +52,7 @@ async def cmd_recc(message: Message):
     response = "**Рекомендации на основе вашей истории:**\n\n"
     book_count = 0
     for theme in recommendations:
-        response += f"📚 *{theme['theme_name']} - {theme['specific_theme']}*\n\n"
+        response += f"📚 *{theme['theme_name']} — {theme['specific_theme']}*\n\n"
         for expert in theme['experts']:
             if book_count >= 5:
                 break
@@ -60,8 +60,8 @@ async def cmd_recc(message: Message):
             expert_position = expert['expert_position']
             book_name = expert['book_name']
             description = expert['description']
-            response += f"👤 {expert_name} ({expert_position})\n"
-            response += f"📖 «{book_name}»\n💬 {description}\n\n"
+            response += f"👤 **{expert_name}** — *{expert_position[0].lower() + expert_position[1:]}.\n*"
+            response += f"📖 {book_name}\n💬 {description}\n\n"
             book_count += 1
 
         if book_count >= 5:
@@ -141,7 +141,7 @@ async def expert_recommendation(message: Message):
 
 
 # Обработчик для callback-запросов инлайн-кнопок экспертов
-@start_router.callback_query()
+@start_router.callback_query(F.data.in_(['get_themes']) | F.data.regexp(r'^(themes_page|theme|subthemes|subtheme|expert|page|index)_'))
 async def process_callback(callback: CallbackQuery):
     data = callback.data
     await db_utils.db.connect()
@@ -281,8 +281,8 @@ async def process_callback(callback: CallbackQuery):
         await db_utils.log_user_activity(user_id=callback.from_user.id, activity_type='get_expert_recommendation',
                                          theme_id=theme_id)
 
-        response = f"**Рекомендации для __{subtheme_name}__** 📚\n\n"
-        response += f"👤 **{info['name']}** *({info['position']})*\n\n"
+        response = f"*Рекомендации для {subtheme_name}* 📚\n\n"
+        response += f"👤 **{info['name']}** — *{info['position'][0].lower() + info['position'][1:]}.*\n\n"
         response += "__Книги:__\n"
         for book_id, description in info['books']:
             # Получение названия книги по book_id
