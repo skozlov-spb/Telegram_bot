@@ -71,7 +71,7 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.close()
 
 
-@admin_router.callback_query(F.data.in_(['admin_select_theme']) |
+@admin_router.callback_query(F.data.in_(['admin_select_theme', 'admin_back_to_panel']) |
                             F.data.regexp(r'^(admin_themes_page|admin_theme|admin_subthemes|admin_delete_subtheme)_'))
 async def process_theme_selection(callback: CallbackQuery):
     await db_utils.db.connect()
@@ -85,7 +85,14 @@ async def process_theme_selection(callback: CallbackQuery):
 
     action = callback.data
 
-    if action == "admin_select_theme" or action.startswith("admin_themes_page_"):
+    if action == "admin_back_to_panel":
+        await callback.message.edit_text(
+            "**Выберите действие в админ-панели**:",
+            reply_markup=admin_panel_kb(),
+            parse_mode="Markdown"
+        )
+
+    elif action == "admin_select_theme" or action.startswith("admin_themes_page_"):
         # Пагинация тем
         if action == "admin_select_theme":
             page = 0
@@ -118,7 +125,11 @@ async def process_theme_selection(callback: CallbackQuery):
         if nav_buttons:
             keyboard.inline_keyboard.append(nav_buttons)
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")])
+            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")]
+        )
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="🔙 Назад в админ-панель", callback_data="admin_back_to_panel")]
+        )
 
         await callback.message.edit_text("**Выберите тему для удаления** 📚\n*Доступные категории:*",
                                         reply_markup=keyboard, parse_mode="Markdown")
@@ -165,7 +176,11 @@ async def process_theme_selection(callback: CallbackQuery):
         if nav_buttons:
             keyboard.inline_keyboard.append(nav_buttons)
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")])
+            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")]
+        )
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="🔙 Назад к темам", callback_data=f"admin_select_theme")]
+        )
 
         await callback.message.edit_text(f"**Подтемы для __{theme_name}__** 📋\n*Выберите подтему для удаления:*",
                                         reply_markup=keyboard, parse_mode="Markdown")
@@ -192,7 +207,7 @@ async def process_theme_selection(callback: CallbackQuery):
     await db_utils.db.close()
 
 
-@admin_router.callback_query(F.data.in_(['admin_select_expert']) |
+@admin_router.callback_query(F.data.in_(['admin_select_expert', 'admin_back_to_panel']) |
                             F.data.regexp(r'^(admin_experts_page|admin_delete_expert)_'))
 async def process_expert_selection(callback: CallbackQuery):
     await db_utils.db.connect()
@@ -206,7 +221,14 @@ async def process_expert_selection(callback: CallbackQuery):
 
     action = callback.data
 
-    if action == "admin_select_expert" or action.startswith("admin_experts_page_"):
+    if action == "admin_back_to_panel":
+        await callback.message.edit_text(
+            "**Выберите действие в админ-панели**:",
+            reply_markup=admin_panel_kb(),
+            parse_mode="Markdown"
+        )
+
+    elif action == "admin_select_expert" or action.startswith("admin_experts_page_"):
         # Пагинация экспертов
         if action == "admin_select_expert":
             page = 0
@@ -240,7 +262,11 @@ async def process_expert_selection(callback: CallbackQuery):
         if nav_buttons:
             keyboard.inline_keyboard.append(nav_buttons)
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")])
+            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")]
+        )
+        keyboard.inline_keyboard.append(
+            [InlineKeyboardButton(text="🔙 Назад в админ-панель", callback_data="admin_back_to_panel")]
+        )
 
         await callback.message.edit_text("**Выберите эксперта для удаления** 👤\n*Доступные эксперты:*",
                                         reply_markup=keyboard, parse_mode="Markdown")
