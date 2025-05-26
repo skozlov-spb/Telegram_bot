@@ -45,7 +45,8 @@ def admin_panel_kb():
         ],
         [
             InlineKeyboardButton(text="📩 Сделать рассылку", callback_data="admin_broadcast"),
-            InlineKeyboardButton(text="🔙 Меню", callback_data="admin_back_to_menu")
-        ]
+            InlineKeyboardButton(text="👑 Добавить администратора", callback_data="admin_add_admin")
+        ],
+        [InlineKeyboardButton(text="🔙 Меню", callback_data="admin_back_to_menu")]
     ])
     return admin_keyboard
