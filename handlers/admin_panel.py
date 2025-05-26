@@ -1,4 +1,5 @@
 import os
+import asyncio
 from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.context import FSMContext
@@ -24,6 +25,8 @@ if not os.path.exists(DATA_DIR):
 class AdminActions(StatesGroup):
     waiting_for_file = State()
     waiting_book_name = State()
+    waiting_broadcast_message = State()
+    waiting_broadcast_confirmation = State()
 
 
 @admin_router.message((F.text.endswith("Админ панель")) & (F.from_user.id.in_(admins)))
@@ -348,3 +351,106 @@ async def process_book_name(message: Message, state: FSMContext):
 async def invalid_file_type(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).", reply_markup=main_kb(message.from_user.id))
+    
+@admin_router.callback_query(F.data == "admin_broadcast")
+async def start_broadcast(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AdminActions.waiting_broadcast_message)
+    await callback.message.answer("Введите сообщение для рассылки:")
+    await callback.answer()
+
+
+@admin_router.callback_query(F.data == "admin_back_to_menu")
+async def back_to_main_menu(callback: CallbackQuery):
+    try:
+        await callback.message.delete()
+    except TelegramBadRequest:
+        pass
+    
+    await callback.message.answer(
+        "Главное меню:",
+        reply_markup=main_kb(callback.from_user.id)
+    )
+    await callback.answer()
+    
+
+@admin_router.message(AdminActions.waiting_broadcast_message, F.from_user.id.in_(admins))
+async def process_broadcast_message(message: Message, state: FSMContext):
+    await db_utils.db.connect()
+    try:
+        subscribers = await db_utils.get_subscribed_users()
+        
+        if not subscribers:
+            await message.answer("❌ Нет активных подписчиков для рассылки", reply_markup=admin_panel_kb())
+            await state.clear()
+            return
+
+        await state.update_data(
+            message_text=message.text,
+            subscribers_count=len(subscribers)
+        )
+
+        confirm_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Да", callback_data="confirm_broadcast"),
+                InlineKeyboardButton(text="❌ Нет", callback_data="cancel_broadcast")
+            ]
+        ])
+
+        # Отправляем сообщение для подтверждения
+        await message.answer(
+            f"✉️ Подтвердите рассылку:\n"
+            f"Получателей: {len(subscribers)}\n"
+            f"Текст сообщения:\n{message.text}",
+            reply_markup=confirm_keyboard
+        )
+        
+        # Меняем состояние на ожидание подтверждения
+        await state.set_state(AdminActions.waiting_broadcast_confirmation)
+
+    except Exception as e:
+        await message.answer("⚠️ Ошибка при подготовке рассылки", reply_markup=admin_panel_kb())
+        await state.clear()
+    
+    finally:
+        await db_utils.db.close()
+
+@admin_router.callback_query(
+    AdminActions.waiting_broadcast_confirmation,
+    F.data.in_(["confirm_broadcast", "cancel_broadcast"])
+)
+async def handle_broadcast_confirmation(callback: CallbackQuery, state: FSMContext):
+    await db_utils.db.connect()
+    try:
+        data = await state.get_data()
+        
+        if callback.data == "confirm_broadcast":
+            subscribers = await db_utils.get_subscribed_users()
+            success_count = 0
+            
+            for user_id in subscribers:
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=data['message_text']
+                )
+                success_count += 1
+                await asyncio.sleep(0.1)
+            
+            report = (
+                f"📬 Рассылка завершена:\n"
+                f"Всего получателей: {data['subscribers_count']}\n"
+                f"Успешно отправлено: {success_count}\n"
+                f"Не удалось отправить: {data['subscribers_count'] - success_count}"
+            )
+            
+            await callback.message.answer(report, reply_markup=admin_panel_kb())
+            
+        else:
+            await callback.message.answer("❌ Рассылка отменена", reply_markup=admin_panel_kb())
+
+    except Exception as e:
+        await callback.message.answer("⚠️ Произошла ошибка при рассылке", reply_markup=admin_panel_kb())
+    
+    finally:
+        await state.clear()
+        await callback.answer()
+        await db_utils.db.close()

@@ -614,3 +614,33 @@ class DBUtils:
         except Exception as exc:
             logger.error(f"Ошибка получения тем: {exc}")
             return []
+        
+    async def is_subscribed(
+            self,
+            user_id: int
+            ) -> bool:
+        """
+        Проверка, подписан ли пользователь на рассылку.
+        Последняя активность должна быть 'subscribe' для подписки.
+        """
+        try:
+            result = await self.db.fetchrow(
+                """
+                SELECT 
+                    request_type 
+                FROM user_activity_logs 
+                WHERE user_id = $1 AND request_type IN ('subscribe', 'unsubscribe') 
+                ORDER BY request_time DESC 
+                LIMIT 1
+                """,
+                user_id
+            )
+
+            if result and result['request_type'] == 'subscribe':
+                return True
+
+            return False
+
+        except Exception as exc:
+            logger.error(f"Ошибка при проверке подписки пользователя {user_id}: {exc}")
+            return False

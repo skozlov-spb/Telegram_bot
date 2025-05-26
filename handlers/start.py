@@ -28,7 +28,7 @@ async def cmd_start(message: Message):
     await db_utils.db.close()
 
 
-@start_router.message(F.text == "📝 Рекомендации")
+@start_router.message(F.text == "📝 Получить рекомендации")
 async def cmd_recc(message: Message):
     user_id = message.from_user.id
     await db_utils.db.connect()
@@ -49,7 +49,7 @@ async def cmd_recc(message: Message):
 
     await db_utils.db.close()
 
-    response = "**Рекомендации на основе вашей истории:**\n\n"
+    response = "**Рекомендации на основе ваших запросов:**\n\n"
     book_count = 0
     for theme in recommendations:
         response += f"📚 *{theme['theme_name']} — {theme['specific_theme']}*\n\n"
@@ -79,11 +79,11 @@ async def cmd_recc(message: Message):
 
 
 # Обработчик кнопки "Подписка"
-@start_router.message(F.text == "🔔 Подписка | Отписка")
+@start_router.message(F.text == "🔔 Подписаться на рассылку")
 async def handle_subscription(message: Message):
     await db_utils.db.connect()
     user_id = message.from_user.id
-    is_sub = True
+    is_sub = await db_utils.is_subscribed(user_id)
 
     # Создаем инлайн-клавиатуру
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
@@ -110,14 +110,14 @@ async def process_subscription_callback(callback: CallbackQuery):
 
     # Определяем новое состояние подписки
 
-    # # Логируем активность
-    # activity_type = "subscribe" if action == "subscribe" else "unsubscribe"
-    # await db_utils.log_user_activity(
-    #     user_id=user_id,
-    #     activity_type=activity_type,
-    #     theme_id=None
-    # )
-    #
+    # Логируем активность
+    activity_type = "subscribe" if action == "subscribe" else "unsubscribe"
+    await db_utils.log_user_activity(
+        user_id=user_id,
+        activity_type=activity_type,
+        theme_id=None
+    )
+    
     response_text = "Вы подписались!" if action == "subscribe" else "Вы отписались!"
 
     try:
@@ -132,7 +132,7 @@ async def process_subscription_callback(callback: CallbackQuery):
     await db_utils.db.close()
 
 
-@start_router.message(F.text == "📚 Подборки от экспертов")
+@start_router.message(F.text == "📚 Просмотреть подборки от экспертов")
 async def expert_recommendation(message: Message):
     await db_utils.db.connect()
     themes = await db_utils.get_available_themes()
@@ -177,7 +177,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
 
     if data == "back_to_main":
         await callback.message.delete()
-        await callback.message.answer('**Добро пожаловать!** 🎉\nВыберите действие в меню ниже:',
+        await callback.message.answer('**Выберите действие в меню ниже:',
                                     reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
         await db_utils.db.close()
@@ -331,7 +331,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
         subtheme_name = subthemes[subtheme_id]
         recommendations = await db_utils.get_expert_recommendations(subtheme_name)
         if not recommendations:
-            await callback.message.answer(f"⚠️ *Рекомендации для __{subtheme_name}__ не найдены.*",
+            await callback.message.answer(f"⚠️ *Рекомендации по теме '{subtheme_name}' не найдены.*",
                                          parse_mode="Markdown")
             await callback.answer()
             await db_utils.db.close()
@@ -348,7 +348,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
         await db_utils.log_user_activity(user_id=callback.from_user.id, activity_type='get_expert_recommendation',
                                         theme_id=theme_id_db)
 
-        response = f"*Рекомендации для {subtheme_name}* 📚\n\n"
+        response = f"*{subtheme_name}* 📚\n\n"
         response += f"👤 **{info['name']}** — *{info['position'][0] + info['position'][1:]}.*\n\n"
         response += "__Книги:__\n"
         for book_id, description in info['books']:
