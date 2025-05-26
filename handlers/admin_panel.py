@@ -9,6 +9,7 @@ from create_bot import admins, bot
 from keyboards.all_keyboards import admin_panel_kb
 from db_handler.db_utils import DBUtils
 from db_handler.db_class import Database
+from keyboards.all_keyboards import main_kb
 
 db = Database()
 db_utils = DBUtils(db=db, bot=bot)
@@ -54,7 +55,7 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
             f"Неактивные пользователи: {stats['inactive_percent']}%\n"
             f"Подписанные на рассылку: {stats['subscribed_users']}"
         )
-        await callback.message.answer(response, parse_mode="Markdown")
+        await callback.message.answer(response, parse_mode="Markdown", reply_markup=main_kb(user_id))
 
     elif action == "admin_upload_data":
         await state.set_state(AdminActions.waiting_for_file)
@@ -78,7 +79,7 @@ async def process_theme_selection(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     if user_id not in admins:
-        await callback.message.answer("У вас нет доступа к админ-панели.")
+        await callback.message.answer("У вас нет доступа к админ-панели.", reply_markup=main_kb(user_id))
         await callback.answer()
         await db_utils.db.close()
         return
@@ -197,11 +198,17 @@ async def process_theme_selection(callback: CallbackQuery):
 
         success = await db_utils.delete_selection(theme_name, subtheme_name)
         if success:
-            await callback.message.edit_text(f"✅ Подборка '{theme_name}/{subtheme_name}' успешно удалена!",
-                                            parse_mode="Markdown")
+
+            await callback.message.delete()
+            await callback.message.answer(
+                f"✅ Подборка '{theme_name}/{subtheme_name}' успешно удалена!",
+                reply_markup=main_kb(callback.from_user.id))
+            
         else:
-            await callback.message.edit_text(f"❌ Не удалось удалить подборку '{theme_name}/{subtheme_name}'",
-                                            parse_mode="Markdown")
+            await callback.message.delete()
+            await callback.message.answer(
+                f"❌ Не удалось удалить подборку '{theme_name}/{subtheme_name}'",
+                reply_markup=main_kb(callback.from_user.id))
 
     await callback.answer()
     await db_utils.db.close()
@@ -214,7 +221,7 @@ async def process_expert_selection(callback: CallbackQuery):
     user_id = callback.from_user.id
 
     if user_id not in admins:
-        await callback.message.answer("У вас нет доступа к админ-панели.")
+        await callback.message.answer("У вас нет доступа к админ-панели.", reply_markup=main_kb(user_id))
         await callback.answer()
         await db_utils.db.close()
         return
@@ -278,11 +285,16 @@ async def process_expert_selection(callback: CallbackQuery):
 
         success = await db_utils.delete_expert(expert_name, expert_position)
         if success:
-            await callback.message.edit_text(f"✅ Эксперт '{expert_name} ({expert_position})' успешно удален!",
-                                            parse_mode="Markdown")
+            await callback.message.delete()
+            await callback.message.answer(
+            f"✅ Эксперт '{expert_name} ({expert_position})' успешно удален!",
+        reply_markup=main_kb(callback.from_user.id))
+            
         else:
-            await callback.message.edit_text(f"❌ Не удалось удалить эксперта '{expert_name} ({expert_position})'",
-                                            parse_mode="Markdown")
+            await callback.message.delete()
+            await callback.message.answer(
+                f"❌ Не удалось удалить эксперта '{expert_name} ({expert_position})'",
+                reply_markup=main_kb(callback.from_user.id))
 
     await callback.answer()
     await db_utils.db.close()
@@ -293,7 +305,7 @@ async def process_uploaded_file(message: Message, state: FSMContext):
     await db_utils.db.connect()
     document = message.document
     if not document.file_name.endswith(('.xlsx', '.xls')):
-        await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).")
+        await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).", reply_markup=main_kb(message.from_user.id))
         await state.clear()
         return
 
@@ -306,15 +318,15 @@ async def process_uploaded_file(message: Message, state: FSMContext):
             success = await db_utils.upload_data(file_path)
 
             if success:
-                await message.answer(f"✅ Данные из файла {document.file_name} успешно загружены!")
+                await message.answer(f"✅ Данные из файла {document.file_name} успешно загружены!", reply_markup=main_kb(message.from_user.id))
                 os.remove(file_path)
             else:
-                await message.answer(f"❌ Ошибка при загрузке данных из файла {document.file_name}")
+                await message.answer(f"❌ Ошибка при загрузке данных из файла {document.file_name}", reply_markup=main_kb(message.from_user.id))
 
             await state.clear()
 
     except Exception as exc:
-        await message.answer(f"❌ Ошибка при обработке файла: {str(exc)}")
+        await message.answer(f"❌ Ошибка при обработке файла: {str(exc)}", reply_markup=main_kb(message.from_user.id))
         await state.clear()
     await db_utils.db.close()
 
@@ -325,9 +337,9 @@ async def process_book_name(message: Message, state: FSMContext):
     book_name = message.text.strip()
     success = await db_utils.delete_book(book_name)
     if success:
-        await message.answer(f"✅ Книга '{book_name}' успешно удалена!")
+        await message.answer(f"✅ Книга '{book_name}' успешно удалена!", reply_markup=main_kb(message.from_user.id))
     else:
-        await message.answer(f"❌ Не удалось удалить книгу '{book_name}'")
+        await message.answer(f"❌ Не удалось удалить книгу '{book_name}'", reply_markup=main_kb(message.from_user.id))
     await state.clear()
     await db_utils.db.close()
 
@@ -335,4 +347,4 @@ async def process_book_name(message: Message, state: FSMContext):
 @admin_router.message(AdminActions.waiting_for_file)
 async def invalid_file_type(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).")
+    await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).", reply_markup=main_kb(message.from_user.id))

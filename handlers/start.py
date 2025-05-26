@@ -39,11 +39,11 @@ async def cmd_recc(message: Message):
         recommendations = await rec_sys.recommend(user_id)
 
         if not recommendations:
-            await message.answer('**Рекомендации пока недоступны.**', parse_mode="Markdown")
+            await message.answer('**Рекомендации пока недоступны.**',reply_markup=main_kb(user_id), parse_mode="Markdown")
             return
 
     except Exception as e:
-        await message.answer(f"Ошибка при получении рекомендаций")
+        await message.answer(f"Ошибка при получении рекомендаций",reply_markup=main_kb(user_id))
         await db_utils.db.close()
         return
 
@@ -69,11 +69,11 @@ async def cmd_recc(message: Message):
 
         # Send message if length exceeds Telegram limit
         if len(response) > 3000:
-            await message.answer(response, parse_mode="Markdown")
+            await message.answer(response, reply_markup=main_kb(user_id), parse_mode="Markdown")
             response = ""
 
     if response:
-        await message.answer(response, parse_mode="Markdown")
+        await message.answer(response,reply_markup=main_kb(user_id), parse_mode="Markdown")
 
 
 
@@ -127,7 +127,7 @@ async def process_subscription_callback(callback: CallbackQuery):
         # Обрабатываем возможные ошибки, например, если сообщение уже удалено
         pass
 
-    await callback.message.answer(response_text)
+    await callback.message.answer(response_text,reply_markup=main_kb(user_id))
     await callback.answer()
     await db_utils.db.close()
 
