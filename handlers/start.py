@@ -1,13 +1,15 @@
 from aiogram import Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-import asyncio
+
+from keyboards.all_keyboards import main_kb, themes_inline_kb, subscribe_channels_kb
+
+from create_bot import bot
+from decouple import config
+
 from db_handler.db_utils import DBUtils
 from recommendation_system.model import RecommendationSystem
 from db_handler.db_class import Database
-
-from keyboards.all_keyboards import main_kb, themes_inline_kb
-from create_bot import bot
 
 start_router = Router()
 
@@ -21,10 +23,46 @@ async def cmd_start(message: Message):
     await db_utils.db.connect()
     user_id = message.from_user.id
     username = message.from_user.username or message.from_user.full_name
-    is_new_user = await db_utils.register_user(user_id, username)
+
+    _ = await db_utils.register_user(user_id, username)
+    # is_spbu_member = await db_utils.is_user_channel_member(user_id)
+    is_spbu_member = True
+
+    if not is_spbu_member:
+        await message.answer(
+            f"Привет! 👋\nДля использования бота необходимо подписаться "
+            f"на наши каналы [СПБГУ]({config('CHANNEL_SPBU_LINK')}) и "
+            f"[Ландау позвонит]({config('CHANNEL_LANDAU_LINK')}).\n"
+            f"После подписки, пожалуйста, нажмите кнопку 'Я подписался!'",
+            reply_markup=subscribe_channels_kb(),
+            parse_mode="Markdown"
+        )
+        await db_utils.db.close()
+        return
 
     await message.answer('**Добро пожаловать!** 🎉\nВыберите действие в меню ниже:',
                          reply_markup=main_kb(message.from_user.id), parse_mode="Markdown")
+    await db_utils.db.close()
+
+
+@start_router.callback_query(F.data == "check_subscription")
+async def check_subscription_callback(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    await db_utils.db.connect()
+
+    is_spbu_member = await db_utils.is_user_channel_member(user_id)
+
+    if is_spbu_member:
+        await callback.message.delete()  # Удаляем предыдущее сообщение с кнопкой
+        await callback.message.answer(
+            "Спасибо за подписку! Теперь вы можете пользоваться ботом. 🎉",
+            reply_markup=main_kb(user_id),
+            parse_mode="Markdown"
+        )
+        await db_utils.log_user_activity(user_id, activity_type='subscribed_channels', theme_id=None) # Логируем
+    else:
+        await callback.answer("Вы еще не подписались на канал.", show_alert=True)  # Покажем всплывающее уведомление
+
     await db_utils.db.close()
 
 
@@ -39,11 +77,12 @@ async def cmd_recc(message: Message):
         recommendations = await rec_sys.recommend(user_id)
 
         if not recommendations:
-            await message.answer('**Рекомендации пока недоступны.**',reply_markup=main_kb(user_id), parse_mode="Markdown")
+            await message.answer('**Рекомендации пока недоступны.**', reply_markup=main_kb(user_id),
+                                 parse_mode="Markdown")
             return
 
     except Exception as e:
-        await message.answer(f"Ошибка при получении рекомендаций",reply_markup=main_kb(user_id))
+        await message.answer(f"Ошибка при получении рекомендаций {e}", reply_markup=main_kb(user_id))
         await db_utils.db.close()
         return
 
@@ -73,32 +112,30 @@ async def cmd_recc(message: Message):
             response = ""
 
     if response:
-        await message.answer(response,reply_markup=main_kb(user_id), parse_mode="Markdown")
+        await message.answer(response, reply_markup=main_kb(user_id), parse_mode="Markdown")
 
 
-
-
-# Обработчик кнопки "Подписка"
-@start_router.message(F.text == "🔔 Подписаться на рассылку")
-async def handle_subscription(message: Message):
-    await db_utils.db.connect()
-    user_id = message.from_user.id
-    is_sub = await db_utils.is_subscribed(user_id)
-
-    # Создаем инлайн-клавиатуру
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(
-            text="Отписаться" if is_sub else "Подписаться",
-            callback_data="unsubscribe" if is_sub else "subscribe"
-        )
-    ]])
-
-    await message.answer(
-        text=f"Нажмите кнопку для "
-             f"{'подписки на рассылку' if not is_sub else 'отписки от рассылки'}:",
-        reply_markup=keyboard
-    )
-    await db_utils.db.close()
+# # Обработчик кнопки "Подписка"
+# @start_router.message(F.text == "🔔 Подписаться на рассылку")
+# async def handle_subscription(message: Message):
+#     await db_utils.db.connect()
+#     user_id = message.from_user.id
+#     is_sub = await db_utils.is_subscribed(user_id)
+#
+#     # Создаем инлайн-клавиатуру
+#     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+#         InlineKeyboardButton(
+#             text="Отписаться" if is_sub else "Подписаться",
+#             callback_data="unsubscribe" if is_sub else "subscribe"
+#         )
+#     ]])
+#
+#     await message.answer(
+#         text=f"Нажмите кнопку для "
+#              f"{'подписки на рассылку' if not is_sub else 'отписки от рассылки'}:",
+#         reply_markup=keyboard
+#     )
+#     await db_utils.db.close()
 
 
 # Обработчик инлайн-кнопок подписки/отписки
@@ -123,11 +160,11 @@ async def process_subscription_callback(callback: CallbackQuery):
     try:
         # Удаляем сообщение бота
         await callback.message.delete()
-    except TelegramBadRequest as e:
+    except TelegramBadRequest as _:
         # Обрабатываем возможные ошибки, например, если сообщение уже удалено
         pass
 
-    await callback.message.answer(response_text,reply_markup=main_kb(user_id))
+    await callback.message.answer(response_text, reply_markup=main_kb(user_id))
     await callback.answer()
     await db_utils.db.close()
 
@@ -161,16 +198,17 @@ async def expert_recommendation(message: Message):
     keyboard.inline_keyboard.append(
         [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")])
     keyboard.inline_keyboard.append(
-        [InlineKeyboardButton(text="🔙 Вернуться в главное меню", callback_data="back_to_main")]
+        [InlineKeyboardButton(text="◄ Вернуться в главное меню", callback_data="back_to_main")]
     )
 
     await message.answer("**Выберите тему** 📚\n*Доступные категории:*",
-                        reply_markup=keyboard,
-                        parse_mode="Markdown")
+                         reply_markup=keyboard,
+                         parse_mode="Markdown")
     await db_utils.db.close()
 
 
-@start_router.callback_query(F.data.in_(['get_themes', 'back_to_main']) | F.data.regexp(r'^(themes_page|theme|subthemes|subtheme|expert|page|index)_'))
+@start_router.callback_query(F.data.in_(['get_themes', 'back_to_main']) | F.data.regexp(
+    r'^(themes_page|theme|subthemes|subtheme|expert|page|index)_'))
 async def process_callback_expert_rec(callback: CallbackQuery):
     data = callback.data
     await db_utils.db.connect()
@@ -178,7 +216,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
     if data == "back_to_main":
         await callback.message.delete()
         await callback.message.answer('**Выберите действие в меню ниже:',
-                                    reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
+                                      reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
         await db_utils.db.close()
         return
@@ -217,11 +255,11 @@ async def process_callback_expert_rec(callback: CallbackQuery):
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")])
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="🔙 Вернуться в главное меню", callback_data="back_to_main")]
+            [InlineKeyboardButton(text="◄ Вернуться в главное меню", callback_data="back_to_main")]
         )
 
         await callback.message.edit_text("**Выберите тему** 📚\n*Доступные категории:*", reply_markup=keyboard,
-                                        parse_mode="Markdown")
+                                         parse_mode="Markdown")
 
     elif data.startswith("theme_") or data.startswith("subthemes_"):
         if data.startswith("theme_"):
@@ -237,7 +275,8 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             try:
                 theme_id, page = map(int, data[len("subthemes_"):].split("_"))
             except ValueError:
-                await callback.message.answer("⚠️ *Некорректный идентификатор темы или страницы.*", parse_mode="Markdown")
+                await callback.message.answer("⚠️ *Некорректный идентификатор темы или страницы.*",
+                                              parse_mode="Markdown")
                 await callback.answer()
                 await db_utils.db.close()
                 return
@@ -282,11 +321,11 @@ async def process_callback_expert_rec(callback: CallbackQuery):
         keyboard.inline_keyboard.append(
             [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")])
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="🔙 Вернуться к темам", callback_data="get_themes")]
+            [InlineKeyboardButton(text="◄ Вернуться к темам", callback_data="get_themes")]
         )
 
         await callback.message.edit_text(f"**Подтемы для __{theme_name}__** 📋\n*Выберите подтему:*",
-                                        reply_markup=keyboard, parse_mode="Markdown")
+                                         reply_markup=keyboard, parse_mode="Markdown")
 
     elif data.startswith("subtheme_") or data.startswith("expert_"):
         if data.startswith("subtheme_"):
@@ -294,7 +333,8 @@ async def process_callback_expert_rec(callback: CallbackQuery):
                 subtheme_id, theme_id = map(int, data[len("subtheme_"):].split("_"))
                 current_index = 0
             except ValueError:
-                await callback.message.answer("⚠️ *Некорректный идентификатор подтемы или темы.*", parse_mode="Markdown")
+                await callback.message.answer("⚠️ *Некорректный идентификатор подтемы или темы.*",
+                                              parse_mode="Markdown")
                 await callback.answer()
                 await db_utils.db.close()
                 return
@@ -332,7 +372,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
         recommendations = await db_utils.get_expert_recommendations(subtheme_name)
         if not recommendations:
             await callback.message.answer(f"⚠️ *Рекомендации по теме '{subtheme_name}' не найдены.*",
-                                         parse_mode="Markdown")
+                                          parse_mode="Markdown")
             await callback.answer()
             await db_utils.db.close()
             return
@@ -346,7 +386,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
         expert_id, info = experts[current_index]
         theme_id_db = await db_utils.get_theme_id(theme_name, subtheme_name)
         await db_utils.log_user_activity(user_id=callback.from_user.id, activity_type='get_expert_recommendation',
-                                        theme_id=theme_id_db)
+                                         theme_id=theme_id_db)
 
         response = f"*{subtheme_name}* 📚\n\n"
         response += f"👤 **{info['name']}** — *{info['position'][0] + info['position'][1:]}.*\n\n"
@@ -364,12 +404,16 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             keyboard = InlineKeyboardMarkup(inline_keyboard=[buttons])
         else:
             keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+
+        if len(experts) > 1:
+            keyboard.inline_keyboard.append(
+                [InlineKeyboardButton(text=f"👨‍🏫 Эксперт {current_index + 1} из {len(experts)}",
+                                      callback_data=f"index_{current_index}")]
+            )
+
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text=f"👨‍🏫 Эксперт {current_index + 1} из {len(experts)}",
-                                 callback_data=f"index_{current_index}")]
-        )
-        keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text=f"🔙 Вернуться к подтемам {theme_name}", callback_data=f"subthemes_{theme_id}_0")]
+            [InlineKeyboardButton(text=f"◄ Вернуться к подтемам {theme_name}",
+                                  callback_data=f"subthemes_{theme_id}_0")]
         )
 
         await callback.message.edit_text(response, parse_mode="Markdown", reply_markup=keyboard)

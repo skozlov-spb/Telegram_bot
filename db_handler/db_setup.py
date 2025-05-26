@@ -1,5 +1,4 @@
 import asyncpg
-import pandas as pd
 from decouple import config
 
 from .db_class import Database
@@ -90,10 +89,13 @@ async def init_db():
                     FOREIGN KEY(book_id) REFERENCES books (book_id) ON DELETE CASCADE
                 );
                 
+                CREATE TYPE user_role AS ENUM ('user', 'admin');
+
                 CREATE TABLE IF NOT EXISTS users (
                     user_id SERIAL PRIMARY KEY,
                     username VARCHAR(50) NOT NULL,
-                    registration_date TIMESTAMP DEFAULT NOW()
+                    registration_date TIMESTAMP DEFAULT NOW(),
+                    role user_role DEFAULT 'user'
                 );
                 
                 CREATE TYPE activity_type AS ENUM (
@@ -101,7 +103,8 @@ async def init_db():
                     'get_expert_recommendation',  -- Получить экспертные рекомендации --
                     'get_recommendation',         -- Получить рекомендации от бота --
                     'subscribe',                  -- Флаг подписки человека --
-                    'unsubscribe'                 -- Флаг отписки --
+                    'unsubscribe',                -- Флаг отписки --
+                    'subscribed_channels'         -- Подписка на канале --
                 );
                 
                 CREATE TABLE IF NOT EXISTS user_activity_logs (
@@ -116,98 +119,15 @@ async def init_db():
                 );
             """)
 
-        # Импортируем данные
-        experts = pd.read_excel(
-            'db_handler/data/ExpertsPreferences.xlsx',
-            skiprows=7,
-            names=[
-                "expert_name",       
-                "expert_position",   
-                "general_theme",     
-                "specific_theme",    
-                "book_name",         
-                "description",       
-            ],
-        ).dropna(subset=["expert_name"])
+            admins_ids = [int(admin_id) for admin_id in config('ADMINS').split(',')]
 
-        # Группируем по авторам, подтемам и тп
-        grouped = experts.groupby([
-            'expert_name',
-            'expert_position',
-            'general_theme',
-            'specific_theme'
-        ], as_index=False).agg({
-            'book_name': list,
-            'description': list
-        })
-        
-        cache = {
-            'experts': {},
-            'themes': {},
-            'books': {}
-        }
-
-        # Заполняем таблицы
-        async with app_pool.acquire() as conn:
-            for _, row in grouped.iterrows():
-                expert_key = (row['expert_name'].strip(), row['expert_position'].strip())
-                if expert_key not in cache['experts']:
-                    expert_id = await conn.fetchval("""
-                        INSERT INTO experts (expert_name, expert_position)
-                        VALUES ($1, $2)
-                        ON CONFLICT (expert_name, expert_position) DO NOTHING
-                        RETURNING expert_id
-                    """, *expert_key)
-
-                    if not expert_id:
-                        expert_id = await conn.fetchval(
-                            """SELECT expert_id FROM experts 
-                            WHERE expert_name = $1 AND expert_position = $2""",
-                            *expert_key
-                        )
-                    cache['experts'][expert_key] = expert_id
-                    
-                theme_key = (row['general_theme'].strip(), row['specific_theme'].strip())
-                if theme_key not in cache['themes']:
-                    theme_id = await conn.fetchval("""
-                        INSERT INTO themes (theme_name, specific_theme)
-                        VALUES ($1, $2)
-                        ON CONFLICT (theme_name, specific_theme) DO NOTHING
-                        RETURNING theme_id
-                    """, *theme_key)
-                    
-                    if not theme_id:
-                        theme_id = await conn.fetchval(
-                            "SELECT theme_id FROM themes WHERE theme_name = $1 AND specific_theme = $2",
-                            *theme_key
-                        )
-                    cache['themes'][theme_key] = theme_id
-
-                for book_name, description in zip(row['book_name'], row['description']):
-                    book_name = book_name.strip()
-                    if book_name not in cache['books']:
-                        book_id = await conn.fetchval("""
-                            INSERT INTO books (book_name)
-                            VALUES ($1)
-                            ON CONFLICT (book_name) DO NOTHING
-                            RETURNING book_id
-                        """, book_name)
-
-                        if not book_id:
-                            book_id = await conn.fetchval(
-                                "SELECT book_id FROM books WHERE book_name = $1",
-                                book_name
-                            )
-                        cache['books'][book_name] = book_id
-
-                    await conn.execute("""
-                        INSERT INTO experts_recommendations 
-                        (expert_id, theme_id, book_id, description)
-                        VALUES ($1, $2, $3, $4)
-                    """, 
-                    cache['experts'][expert_key], 
-                    cache['themes'][theme_key], 
-                    cache['books'][book_name],
-                    description.strip())
-
-        await app_pool.close()
+            for admin_id in admins_ids:
+                await conn.execute(
+                    """
+                    INSERT INTO users 
+                    (user_id, username, role)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    admin_id, f'user_{admin_id}', 'admin'
+                )

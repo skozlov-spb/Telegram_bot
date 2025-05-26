@@ -2,11 +2,14 @@ import logging
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import pandas as pd
+import psycopg2
 import asyncpg
 from asyncpg.pool import Pool
+from decouple import config
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramAPIError
+from aiogram.enums import ChatMemberStatus
 
 from .db_class import Database
 
@@ -20,12 +23,29 @@ ALLOWED_ACTIVITIES = [
     'get_recommendation',
     'subscribe',
     'unsubscribe',
-    'presubscribed_spbu_true',
-    'presubscribed_landau_true'
+    'subscribed_channels'
 ]
 
-CHANNEL_SPBU_ID = -1001752627981
-CHANNEL_LANDAU_ID = -1001273779592
+
+def get_admin_ids():
+    try:
+        conn = psycopg2.connect(
+            dbname=config("PG_DB"),
+            user=config("PG_USER"),
+            password=config("PG_PASSWORD"),
+            host=config("PG_HOST"),
+            port=config("PG_PORT")
+        )
+    except psycopg2.OperationalError as e:
+        logger.error(f"Не удалось подключиться к БД")
+        return [int(admin_id) for admin_id in config('ADMINS').split(',')]
+
+    with conn.cursor() as cur:
+        cur.execute("SELECT user_id FROM users WHERE role = 'admin'")
+        rows = cur.fetchall()
+    conn.close()
+
+    return [row[0] for row in rows]
 
 
 class DBUtils:
@@ -44,7 +64,10 @@ class DBUtils:
 
         self.db: Database = db
         self.bot: Bot = bot
-        
+
+    async def get_admin_ids(self):
+        rows = await self.db.fetch("SELECT user_id FROM users WHERE role = 'admin'")
+        return [row['user_id'] for row in rows]
 
     async def register_user(
             self,
@@ -62,10 +85,10 @@ class DBUtils:
         try:
             result = await self.db.fetchrow(
                 """
-                    INSERT INTO users (user_id, username, registration_date) 
+                    INSERT INTO users (user_id, username, registration_date, role) 
                     VALUES 
-                        ($1, $2, NOW() AT TIME ZONE 'Europe/Moscow')
-                        ON CONFLICT (user_id) 
+                        ($1, $2, NOW() AT TIME ZONE 'Europe/Moscow', 'user')
+                        ON CONFLICT (user_id)
                         DO UPDATE SET username = EXCLUDED.username
                         RETURNING (xmax = 0) AS is_new
                 """,
@@ -331,7 +354,6 @@ class DBUtils:
             logger.error(f"Ошибка получения theme_id для {theme_name}/{subtheme_name}: {exc}")
             return None
 
-
     async def upload_data(self, file_path: str) -> bool:
         """
         Загрузка данных из Excel-файла в базу данных.
@@ -595,7 +617,7 @@ class DBUtils:
             logger.error(f"Ошибка при получении списка подписанных пользователей: {exc}")
             return []
         
-    async def get_available_experts(self) -> List[str]:
+    async def get_available_experts(self) -> List[List[str]]:
         """Получение списка экспертов + должностей
             return: [[имя, должность]...]
         """
@@ -614,7 +636,7 @@ class DBUtils:
         except Exception as exc:
             logger.error(f"Ошибка получения тем: {exc}")
             return []
-        
+
     async def is_subscribed(
             self,
             user_id: int
@@ -643,4 +665,47 @@ class DBUtils:
 
         except Exception as exc:
             logger.error(f"Ошибка при проверке подписки пользователя {user_id}: {exc}")
+            return False
+
+    async def assign_admin_role(
+            self,
+            user_id: int
+    ) -> None:
+        """
+        Обновляет статус пользователя
+        """
+        await self.db.execute(
+            """
+            UPDATE users
+            SET role='admin'
+            WHERE user_id=$1
+            """,
+            user_id
+        )
+
+    async def is_user_channel_member(self, user_id: int) -> bool:
+        """
+        Проверяет, является ли пользователь участником каналов.
+        """
+        try:
+            chat_member_spbu = await self.bot.get_chat_member(chat_id=config('CHANNEL_SPBU_ID'), user_id=user_id)
+            chat_member_landau = await self.bot.get_chat_member(chat_id=config('CHANNEL_LANDAU_ID'), user_id=user_id)
+            return chat_member_spbu.status in [
+                ChatMemberStatus.MEMBER,
+                ChatMemberStatus.ADMINISTRATOR,
+                ChatMemberStatus.CREATOR
+            ] and chat_member_landau.status in [
+                ChatMemberStatus.MEMBER,
+                ChatMemberStatus.ADMINISTRATOR,
+                ChatMemberStatus.CREATOR
+            ]
+        except TelegramForbiddenError:
+            logger.info(f"Бот не является членом или не имеет прав администратора в каналах.")
+            return False
+        except TelegramBadRequest as e:
+            logger.warning(
+                f"Не удалось получить информацию о членстве пользователя {user_id} в каналах: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Неизвестная ошибка при проверке членства пользователя {user_id} в каналах: {e}")
             return False
