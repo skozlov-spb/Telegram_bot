@@ -92,7 +92,7 @@ async def init_db():
                 CREATE TYPE user_role AS ENUM ('user', 'admin');
 
                 CREATE TABLE IF NOT EXISTS users (
-                    user_id SERIAL PRIMARY KEY,
+                    user_id BIGSERIAL PRIMARY KEY,
                     username VARCHAR(50) NOT NULL,
                     registration_date TIMESTAMP DEFAULT NOW(),
                     role user_role DEFAULT 'user'
