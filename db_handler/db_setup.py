@@ -64,6 +64,7 @@ async def init_db():
                 
                 CREATE TABLE IF NOT EXISTS themes (
                     theme_id SERIAL PRIMARY KEY,
+
                     theme_name VARCHAR(100) NOT NULL,
                     specific_theme VARCHAR(100) NOT NULL,
                     
@@ -72,6 +73,7 @@ async def init_db():
                 
                 CREATE TABLE IF NOT EXISTS books (
                     book_id SERIAL PRIMARY KEY,
+
                     book_name VARCHAR(400) NOT NULL UNIQUE,
                     book_image VARCHAR(1000) UNIQUE
                 );
@@ -82,7 +84,7 @@ async def init_db():
                     theme_id INT NOT NULL,
                     book_id INT NOT NULL,
                     description TEXT NOT NULL,
-    
+
                     FOREIGN KEY(expert_id) REFERENCES experts (expert_id) ON DELETE CASCADE,
                     FOREIGN KEY(theme_id) REFERENCES themes (theme_id)ON DELETE CASCADE,
                     FOREIGN KEY(book_id) REFERENCES books (book_id) ON DELETE CASCADE
@@ -94,26 +96,19 @@ async def init_db():
                     registration_date TIMESTAMP DEFAULT NOW()
                 );
                 
-                CREATE TABLE IF NOT EXISTS user_preferences (
-                    pref_id SERIAL PRIMARY KEY,
-                    user_id INT NOT NULL,
-                    theme_id INT NOT NULL,
-    
-                    FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE,
-                    FOREIGN KEY(theme_id) REFERENCES themes (theme_id) ON DELETE CASCADE
+                CREATE TYPE activity_type AS ENUM (
+                    'start_bot',                  -- При начале использования бота --
+                    'get_expert_recommendation',  -- Получить экспертные рекомендации --
+                    'get_recommendation',         -- Получить рекомендации от бота --
+                    'subscribe',                  -- Флаг подписки человека --
+                    'unsubscribe'                 -- Флаг отписки --
                 );
                 
                 CREATE TABLE IF NOT EXISTS user_activity_logs (
                     log_id SERIAL PRIMARY KEY,
                     user_id INT NOT NULL,
                     request_time TIMESTAMP DEFAULT NOW(),
-                    request_type TEXT NOT NULL CHECK (request_type IN (
-                        'start_bot',  -- При начале использования бота --
-                        'get_expert_recommendation',  -- Получить экспертные рекомендации --
-                        'get_recomendation',  -- Получить рекомендации от бота --
-                        'subscribe',  -- Флаг подписки человека --
-                        'unsubscribe'  -- Флаг отписки --
-                    )),
+                    request_type activity_type,
                     theme_id INT DEFAULT NULL,
     
                     FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE,
@@ -122,50 +117,97 @@ async def init_db():
             """)
 
         # Импортируем данные
-        experts = pd.read_excel('db_handler/data/ExpertsPreferences.xlsx', header=7)
+        experts = pd.read_excel(
+            'db_handler/data/ExpertsPreferences.xlsx',
+            skiprows=7,
+            names=[
+                "expert_name",       
+                "expert_position",   
+                "general_theme",     
+                "specific_theme",    
+                "book_name",         
+                "description",       
+            ],
+        ).dropna(subset=["expert_name"])
 
         # Группируем по авторам, подтемам и тп
         grouped = experts.groupby([
-            'Имя эксперта',
-            'Должность эксперта в СПбГУ',
-            'Общая тема подборки',
-            'Конкретная тема подборки'
+            'expert_name',
+            'expert_position',
+            'general_theme',
+            'specific_theme'
         ], as_index=False).agg({
-            'Название книги': list,
-            'Короткое описание от эксперта': list
+            'book_name': list,
+            'description': list
         })
+        
+        cache = {
+            'experts': {},
+            'themes': {},
+            'books': {}
+        }
 
         # Заполняем таблицы
         async with app_pool.acquire() as conn:
             for _, row in grouped.iterrows():
-                expert_id = await conn.fetchval("""
-                    INSERT INTO experts (expert_name, expert_position)
-                    VALUES ($1, $2)
-                    ON CONFLICT (expert_name, expert_position) DO UPDATE SET expert_name = EXCLUDED.expert_name
-                    RETURNING expert_id
-                """, row['Имя эксперта'], row['Должность эксперта в СПбГУ'])
+                expert_key = (row['expert_name'].strip(), row['expert_position'].strip())
+                if expert_key not in cache['experts']:
+                    expert_id = await conn.fetchval("""
+                        INSERT INTO experts (expert_name, expert_position)
+                        VALUES ($1, $2)
+                        ON CONFLICT (expert_name, expert_position) DO NOTHING
+                        RETURNING expert_id
+                    """, *expert_key)
 
-                theme_id = await conn.fetchval("""
-                    INSERT INTO themes (theme_name, specific_theme)
-                    VALUES ($1, $2)
-                    ON CONFLICT (theme_name, specific_theme) DO UPDATE SET specific_theme = EXCLUDED.specific_theme
-                    RETURNING theme_id
-                """, row['Общая тема подборки'], row['Конкретная тема подборки'])
+                    if not expert_id:
+                        expert_id = await conn.fetchval(
+                            """SELECT expert_id FROM experts 
+                            WHERE expert_name = $1 AND expert_position = $2""",
+                            *expert_key
+                        )
+                    cache['experts'][expert_key] = expert_id
+                    
+                theme_key = (row['general_theme'].strip(), row['specific_theme'].strip())
+                if theme_key not in cache['themes']:
+                    theme_id = await conn.fetchval("""
+                        INSERT INTO themes (theme_name, specific_theme)
+                        VALUES ($1, $2)
+                        ON CONFLICT (theme_name, specific_theme) DO NOTHING
+                        RETURNING theme_id
+                    """, *theme_key)
+                    
+                    if not theme_id:
+                        theme_id = await conn.fetchval(
+                            "SELECT theme_id FROM themes WHERE theme_name = $1 AND specific_theme = $2",
+                            *theme_key
+                        )
+                    cache['themes'][theme_key] = theme_id
 
-                for book_name, description in zip(row['Название книги'], row['Короткое описание от эксперта']):
-                    book_id = await conn.fetchval("""
-                        INSERT INTO books (book_name)
-                        VALUES ($1)
-                        ON CONFLICT (book_name) DO NOTHING
-                        RETURNING book_id
-                    """, book_name)
+                for book_name, description in zip(row['book_name'], row['description']):
+                    book_name = book_name.strip()
+                    if book_name not in cache['books']:
+                        book_id = await conn.fetchval("""
+                            INSERT INTO books (book_name)
+                            VALUES ($1)
+                            ON CONFLICT (book_name) DO NOTHING
+                            RETURNING book_id
+                        """, book_name)
 
-                    if book_id is None:
-                        book_id = await conn.fetchval("SELECT book_id FROM books WHERE book_name = $1", book_name)
+                        if not book_id:
+                            book_id = await conn.fetchval(
+                                "SELECT book_id FROM books WHERE book_name = $1",
+                                book_name
+                            )
+                        cache['books'][book_name] = book_id
 
                     await conn.execute("""
-                        INSERT INTO experts_recommendations (expert_id, theme_id, book_id, description)
+                        INSERT INTO experts_recommendations 
+                        (expert_id, theme_id, book_id, description)
                         VALUES ($1, $2, $3, $4)
-                    """, expert_id, theme_id, book_id, description)
+                    """, 
+                    cache['experts'][expert_key], 
+                    cache['themes'][theme_key], 
+                    cache['books'][book_name],
+                    description.strip())
 
         await app_pool.close()

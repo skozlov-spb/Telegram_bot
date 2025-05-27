@@ -1,158 +1,161 @@
-import unittest
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from aiogram import types
-from aiogram.types import (
-    ReplyKeyboardMarkup,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    KeyboardButton,
-    Message,
-    CallbackQuery
-)
-from typing import List, Optional
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch, ANY
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramBadRequest
+from aiogram.fsm.context import FSMContext
 
 
-class TestStartHandlers(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.mock_message = MagicMock(spec=Message)
-        self.mock_message.from_user = MagicMock(id=123, username="test_user")
-        self.mock_message.answer = AsyncMock()
-        self.mock_message.edit_text = AsyncMock()
+@pytest.fixture
+def mock_db():
+    mock = AsyncMock()
+    mock.connect = AsyncMock()
+    mock.close = AsyncMock()
+    return mock
 
-        self.mock_callback = MagicMock(spec=CallbackQuery)
-        self.mock_callback.message = self.mock_message
-        self.mock_callback.answer = AsyncMock()
-        self.mock_callback.data = ""
 
-        # Мокируем зависимости
-        self.mock_db_utils = AsyncMock()
-        self.mock_main_kb = MagicMock(return_value=ReplyKeyboardMarkup(
-            keyboard=[[KeyboardButton(text="📝 Рекомендация"), KeyboardButton(text="📚 Рекомендация экспертов")]],
-            resize_keyboard=True
-        ))
-        self.mock_themes_inline_kb = MagicMock(return_value=InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="Получить темы", callback_data="get_themes")]]
-        ))
-
-        # Патчим все зависимости
-        self.patches = [
-            patch('handlers.start.db_utils', self.mock_db_utils),
-            patch('handlers.start.main_kb', self.mock_main_kb),
-            patch('handlers.start.themes_inline_kb', self.mock_themes_inline_kb),
-            patch('handlers.start.bot', AsyncMock())
-        ]
-
-        for p in self.patches:
-            p.start()
-            self.addCleanup(p.stop)
-
-    async def test_cmd_start(self):
-        from handlers.start import cmd_start
-
-        await cmd_start(self.mock_message)
-
-        self.mock_main_kb.assert_called_once_with(123)
-        self.mock_message.answer.assert_called_once_with(
-            'Меню',
-            reply_markup=self.mock_main_kb.return_value
-        )
-
-    async def test_cmd_start_3(self):
-        from handlers.start import cmd_start_3
-
-        self.mock_message.text = 'привет'
-        await cmd_start_3(self.mock_message)
-
-        self.mock_message.answer.assert_called_once_with('Привет!')
-
-    async def test_expert_recommendation(self):
-        from handlers.start import expert_recommendation
-
-        self.mock_message.text = '📚 Рекомендация экспертов'
-        await expert_recommendation(self.mock_message)
-
-        self.mock_themes_inline_kb.assert_called_once()
-        self.mock_message.answer.assert_called_once_with(
-            "Нажмите ниже, чтобы выбрать тему для рекомендаций экспертов:",
-            reply_markup=self.mock_themes_inline_kb.return_value
-        )
-
-    async def test_process_callback_get_themes(self):
-        from handlers.start import process_callback
-
-        self.mock_callback.data = "get_themes"
-        self.mock_db_utils.get_available_themes.return_value = ["theme1", "theme2"]
-
-        await process_callback(self.mock_callback)
-
-        self.mock_db_utils.get_available_themes.assert_called_once()
-        self.mock_message.edit_text.assert_called_once()
-        self.mock_callback.answer.assert_called_once()
-
-    async def test_process_callback_theme(self):
-        from handlers.start import process_callback
-
-        self.mock_callback.data = "theme_test"
-        self.mock_db_utils.get_subthemes.return_value = ["sub1", "sub2"]
-
-        await process_callback(self.mock_callback)
-
-        self.mock_db_utils.get_subthemes.assert_called_once_with("test")
-        self.mock_message.edit_text.assert_called_once()
-        self.mock_callback.answer.assert_called_once()
-
-    async def test_process_callback_subtheme(self):
-        from handlers.start import process_callback
-
-        self.mock_callback.data = "subtheme_test"
-        self.mock_db_utils.get_expert_recommendations.return_value = {
-            "1": {
-                "book_name": "Book",
-                "expert_name": "Expert",
-                "expert_position": "Position",
-                "description": "Desc"
-            }
+@pytest.fixture
+def mock_db_utils(mock_db):
+    mock = AsyncMock()
+    mock.db = mock_db
+    mock.register_user = AsyncMock(return_value=True)
+    mock.get_statistic = AsyncMock(return_value={
+        "total_users": 100,
+        "inactive_percent": 20.0,
+        "subscribed_users": 80
+    })
+    mock.recommend = AsyncMock(return_value=[{
+        "theme_name": "Theme1",
+        "specific_theme": "Sub1",
+        "experts": [{
+            "expert_name": "Expert1",
+            "expert_position": "Pos1",
+            "book_name": "Book1",
+            "description": "Desc1"
+        }]
+    }])
+    mock.get_available_themes = AsyncMock(return_value=["Theme1", "Theme2"])
+    mock.get_subthemes = AsyncMock(return_value=["Subtheme1"])
+    mock.get_expert_recommendations = AsyncMock(return_value={
+        "expert1": {
+            "name": "Expert1",
+            "position": "Position1",
+            "books": [("Book1", "Description1")]
         }
-
-        await process_callback(self.mock_callback)
-
-        self.mock_db_utils.get_expert_recommendations.assert_called_once_with("test")
-        self.mock_message.edit_text.assert_called_once()
-        self.mock_callback.answer.assert_called_once()
-
-    async def test_process_callback_empty_themes(self):
-        from handlers.start import process_callback
-
-        self.mock_callback.data = "get_themes"
-        self.mock_db_utils.get_available_themes.return_value = []
-
-        await process_callback(self.mock_callback)
-
-        self.mock_message.answer.assert_called_once_with("Темы отсутствуют.")
-        self.mock_callback.answer.assert_called_once()
-
-    async def test_process_callback_empty_subthemes(self):
-        from handlers.start import process_callback
-
-        self.mock_callback.data = "theme_test"
-        self.mock_db_utils.get_subthemes.return_value = []
-
-        await process_callback(self.mock_callback)
-
-        self.mock_message.answer.assert_called_once_with("Подтемы для test не найдены.")
-        self.mock_callback.answer.assert_called_once()
-
-    async def test_process_callback_empty_recommendations(self):
-        from handlers.start import process_callback
-
-        self.mock_callback.data = "subtheme_test"
-        self.mock_db_utils.get_expert_recommendations.return_value = None
-
-        await process_callback(self.mock_callback)
-
-        self.mock_message.answer.assert_called_once_with("Рекомендации для test не найдены.")
-        self.mock_callback.answer.assert_called_once()
+    })
+    mock.is_subscribed = AsyncMock(return_value=False)
+    mock.log_user_activity = AsyncMock()
+    mock.get_subscribed_users = AsyncMock(return_value=[123, 456])
+    mock.delete_selection = AsyncMock(return_value=True)
+    mock.get_theme_id = AsyncMock(return_value=1)
+    return mock
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.fixture
+def mock_rec_sys():
+    mock = AsyncMock()
+    mock.recommend = AsyncMock(return_value=[{
+        "theme_name": "Theme1",
+        "specific_theme": "Sub1",
+        "experts": [{
+            "expert_name": "Expert1",
+            "expert_position": "Pos1",
+            "book_name": "Book1",
+            "description": "Desc1"
+        }]
+    }])
+    return mock
+
+
+@pytest.fixture
+def mock_objects(mock_db_utils, mock_rec_sys):
+    mock_message = AsyncMock(spec=Message)
+    mock_message.from_user = MagicMock(id=123, username="testuser")
+    mock_message.text = ""
+    mock_message.answer = AsyncMock()
+    mock_message.delete = AsyncMock()
+    mock_message.edit_text = AsyncMock(return_value=True)
+
+    mock_callback = AsyncMock(spec=CallbackQuery)
+    mock_callback.from_user = MagicMock(id=123)
+    mock_callback.message = mock_message
+    mock_callback.data = ""
+    mock_callback.answer = AsyncMock()
+
+    return {
+        "message": mock_message,
+        "callback": mock_callback,
+        "db_utils": mock_db_utils,
+        "rec_sys": mock_rec_sys,
+        "db": mock_db_utils.db
+    }
+
+
+@pytest.mark.asyncio
+class TestStartHandlers:
+    async def test_cmd_start_new_user(self, mock_objects):
+        with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
+                patch('handlers.start.main_kb', MagicMock()):
+            from handlers.start import cmd_start
+            await cmd_start(mock_objects["message"])
+
+            mock_objects["db_utils"].register_user.assert_awaited_once_with(123, "testuser")
+            mock_objects["message"].answer.assert_awaited_once()
+
+    async def test_cmd_recc_success(self, mock_objects):
+        with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
+                patch('handlers.start.rec_sys', mock_objects["rec_sys"]), \
+                patch('handlers.start.main_kb', MagicMock()):
+            from handlers.start import cmd_recc
+            await cmd_recc(mock_objects["message"])
+
+            mock_objects["rec_sys"].recommend.assert_awaited_once_with(123)
+            mock_objects["message"].answer.assert_awaited()
+
+    async def test_cmd_recc_no_recommendations(self, mock_objects):
+        mock_objects["rec_sys"].recommend.return_value = []
+        with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
+                patch('handlers.start.rec_sys', mock_objects["rec_sys"]), \
+                patch('handlers.start.main_kb', MagicMock()):
+            from handlers.start import cmd_recc
+            await cmd_recc(mock_objects["message"])
+
+            mock_objects["message"].answer.assert_awaited_with(
+                '**Рекомендации пока недоступны.**',
+                reply_markup=ANY,
+                parse_mode="Markdown"
+            )
+
+    async def test_handle_subscription_not_subscribed(self, mock_objects):
+        mock_objects["message"].text = "🔔 Подписаться на рассылку"
+        with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
+                patch('handlers.start.main_kb', MagicMock()):
+            from handlers.start import handle_subscription
+            await handle_subscription(mock_objects["message"])
+
+            mock_objects["message"].answer.assert_awaited_once()
+            assert "подписки на рассылку" in mock_objects["message"].answer.call_args[1]["text"]
+
+    async def test_process_subscription_callback_subscribe(self, mock_objects):
+        mock_objects["callback"].data = "subscribe"
+        with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
+                patch('handlers.start.main_kb', MagicMock()), \
+                patch('handlers.start.bot', AsyncMock()), \
+                patch('aiogram.exceptions.TelegramBadRequest', Exception):
+            from handlers.start import process_subscription_callback
+            await process_subscription_callback(mock_objects["callback"])
+
+            mock_objects["db_utils"].log_user_activity.assert_awaited_once_with(
+                user_id=123,
+                activity_type="subscribe",
+                theme_id=None
+            )
+
+    async def test_process_callback_back_to_main(self, mock_objects):
+        mock_objects["callback"].data = "back_to_main"
+        with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
+                patch('handlers.start.main_kb', MagicMock()):
+            from handlers.start import process_callback_expert_rec
+            await process_callback_expert_rec(mock_objects["callback"])
+
+            mock_objects["callback"].message.delete.assert_awaited_once()
+            mock_objects["callback"].message.answer.assert_awaited_once()
