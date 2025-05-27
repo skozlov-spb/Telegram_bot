@@ -246,7 +246,7 @@ async def handle_subtheme_deletion(callback: CallbackQuery, state: FSMContext):
         if success:
             await callback.message.delete()
             await callback.message.answer(
-                f"✅ Подборка «_{data['theme_name']}/{data['subtheme_name']}_» успешно удалена!",
+                f"✅ Подборка «{data['theme_name']}/{data['subtheme_name']}» успешно удалена!",
                 reply_markup=main_kb(callback.from_user.id)
             )
         else:

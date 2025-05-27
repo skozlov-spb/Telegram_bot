@@ -389,7 +389,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
                                          theme_id=theme_id_db)
 
         response = f"*{subtheme_name}* 📚\n\n"
-        response += f"👤 **{info['name']}** — *{info['position'][0] + info['position'][1:]}.*\n\n"
+        response += f"👤 **{info['name']}** — *{info['position'][0].lower() + info['position'][1:]}.*\n\n"
         response += "__Книги:__\n"
         for book_id, description in info['books']:
             book_name = book_id
