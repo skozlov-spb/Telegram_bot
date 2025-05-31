@@ -10,7 +10,7 @@ from decouple import config
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramAPIError
 from aiogram.enums import ChatMemberStatus
-
+import asyncio
 from .db_class import Database
 
 
@@ -23,7 +23,8 @@ ALLOWED_ACTIVITIES = [
     'get_recommendation',
     'subscribe',
     'unsubscribe',
-    'subscribed_channels'
+    'pre_subscribed_SPBU',
+    'pre_subscribed_landau'
 ]
 
 
@@ -273,7 +274,7 @@ class DBUtils:
         """
         try:
             
-            total_users = await self.db.fetchrow("SELECT COUNT(*) FROM users")
+            total_users = await self.db.fetchval("SELECT COUNT(*) FROM users") or 0
 
             if total_users == 0:
                 return {
@@ -282,7 +283,7 @@ class DBUtils:
                 "subscribed_users": 0,
             }
 
-            inactive_count = await self.db.fetchrow(
+            inactive_count = await self.db.fetchval(
                 """
                 SELECT COUNT(*)
                 FROM users 
@@ -293,9 +294,9 @@ class DBUtils:
                 )
                 """
             )
-            inactive_percent = round((inactive_count['count'] / total_users['count']) * 100, 2)
+            inactive_percent = round((inactive_count / total_users) * 100, 2)
 
-            subscribed_count = await self.db.fetchrow(
+            subscribed_count = await self.db.fetchval(
                 """
                 SELECT COUNT(DISTINCT user_id)
                 FROM (
@@ -309,19 +310,66 @@ class DBUtils:
                 WHERE rn = 1 AND request_type = 'subscribe'
                 """
             )
+            
+                        # Число пользователей, удаливших бот (статус 'blocked')
+            blocked_count = await self.db.fetchval("""
+                SELECT COUNT(*) 
+                FROM users 
+                WHERE status = 'blocked'
+            """)
+
+            # WAU (активные пользователи за неделю)
+            wau_count = await self.db.fetchval("""
+                SELECT COUNT(DISTINCT user_id)
+                FROM user_activity_logs
+                WHERE request_type IN ('start_bot', 'get_expert_recommendation', 'get_recommendation', 'subscribe', 'unsubscribe')
+                AND request_time > NOW() - INTERVAL '7 days'
+            """)
+
+            # Процент повторных обращений
+            repeat_usage = await self.db.fetchval("""
+                WITH interactions AS (
+                    SELECT 
+                        user_id,
+                        request_time,
+                        LAG(request_time) OVER (PARTITION BY user_id ORDER BY request_time) AS prev_time
+                    FROM user_activity_logs
+                    WHERE request_type IN ('get_expert_recommendation', 'get_recommendation')
+                ),
+                distinct_interactions AS (
+                    SELECT 
+                        user_id,
+                        COUNT(*) AS interaction_count
+                    FROM interactions
+                    WHERE prev_time IS NULL 
+                       OR request_time - prev_time >= INTERVAL '30 minutes'
+                    GROUP BY user_id
+                )
+                SELECT 
+                    COUNT(*)::float / (SELECT COUNT(*) FROM distinct_interactions)
+                FROM distinct_interactions
+                WHERE interaction_count > 1
+            """)
+            repeat_usage_percent = round(repeat_usage * 100, 2) if repeat_usage else 0.0
 
             return {
-                "total_users": total_users['count'],
+                "total_users": total_users,
                 "inactive_percent": inactive_percent,
-                "subscribed_users": subscribed_count['count'],
+                "subscribed_users": subscribed_count,
+                "blocked_users": blocked_count,
+                "wau": wau_count,
+                "repeat_usage_percent": repeat_usage_percent
             }
 
         except Exception as exc:
             logger.error(f"Ошибка получения статистики: {exc}")
             return {
                 "total_users": 0,
-                "inactive_percent": 0.0,
+                "inactive_percent": 0,
                 "subscribed_users": 0,
+                "blocked_users": 0,
+                "wau": 0,
+                "repeat_usage_percent": 0
             }
 
     async def get_theme_id(
@@ -709,3 +757,40 @@ class DBUtils:
         except Exception as e:
             logger.error(f"Неизвестная ошибка при проверке членства пользователя {user_id} в каналах: {e}")
             return False
+        
+    async def update_user_status(self, user_id: int, status: str):
+        """Обновляет статус пользователя"""
+        query = """
+            UPDATE users
+            SET status = $1
+            WHERE user_id = $2
+        """
+        await self.db.execute(query, status, user_id)
+        
+    async def check_users_status(self):
+        logger.info("Запуск проверки статуса пользователей...")
+        await self.db.connect()
+        try:
+            users = await self.get_all_users()
+            logger.info(f"Проверка статуса для {len(users)} пользователей")
+            for user in users:
+                user_id = user['user_id']
+                try:
+                    await self.bot.send_chat_action(user_id, 'typing')
+                    await self.update_user_status(user_id, 'active')
+                    #await self.log_user_activity(user_id, activity_type='active', theme_id=None)
+                except TelegramForbiddenError:
+                    await self.update_user_status(user_id, 'blocked')
+                    #await self.log_user_activity(user_id, activity_type='blocked_bot', theme_id=None)
+                except TelegramBadRequest as e:
+                    await self.update_user_status(user_id, 'inactive')
+                    #await self.log_user_activity(user_id, activity_type='chat_unavailable', theme_id=None)
+                await asyncio.sleep(0.1)
+        finally:
+            await self.db.close()
+            logger.info("Проверка и обновление статуса пользователей завершена.")
+
+    async def get_all_users(self):
+        """Получает список всех пользователей для проверки."""
+        query = "SELECT user_id FROM users"
+        return await self.db.fetch(query)

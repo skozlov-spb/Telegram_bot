@@ -10,7 +10,7 @@ from decouple import config
 from db_handler.db_utils import DBUtils
 from recommendation_system.model import RecommendationSystem
 from db_handler.db_class import Database
-
+from aiogram.exceptions import TelegramBadRequest
 start_router = Router()
 
 db = Database()

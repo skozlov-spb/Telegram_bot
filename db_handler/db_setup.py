@@ -90,12 +90,14 @@ async def init_db():
                 );
                 
                 CREATE TYPE user_role AS ENUM ('user', 'admin');
+                CREATE TYPE user_status AS ENUM ('active', 'blocked');
 
                 CREATE TABLE IF NOT EXISTS users (
                     user_id BIGSERIAL PRIMARY KEY,
                     username VARCHAR(50) NOT NULL,
                     registration_date TIMESTAMP DEFAULT NOW(),
-                    role user_role DEFAULT 'user'
+                    role user_role DEFAULT 'user',
+                    status user_status DEFAULT 'active'
                 );
                 
                 CREATE TYPE activity_type AS ENUM (
@@ -109,7 +111,7 @@ async def init_db():
                 
                 CREATE TABLE IF NOT EXISTS user_activity_logs (
                     log_id SERIAL PRIMARY KEY,
-                    user_id INT NOT NULL,
+                    user_id BIGINT NOT NULL,
                     request_time TIMESTAMP DEFAULT NOW(),
                     request_type activity_type,
                     theme_id INT DEFAULT NULL,
@@ -117,6 +119,10 @@ async def init_db():
                     FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE,
                     FOREIGN KEY(theme_id) REFERENCES themes (theme_id) ON DELETE SET NULL
                 );
+            CREATE INDEX idx_user_activity_logs_user_id_request_time ON user_activity_logs (user_id, request_time);
+            CREATE INDEX idx_user_activity_logs_request_type ON user_activity_logs (request_type);
+            CREATE INDEX idx_user_activity_logs_recent_activity ON user_activity_logs (request_time, user_id);
+            CREATE INDEX idx_users_status ON users (status);
             """)
 
             admins_ids = [int(admin_id) for admin_id in config('ADMINS').split(',')]

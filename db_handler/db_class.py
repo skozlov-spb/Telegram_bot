@@ -56,6 +56,16 @@ class Database:
 
         async with self.pool.acquire() as conn:
             return await conn.fetch(query, *args)
+    async def fetchval(
+            self,
+            query: str,
+            *args
+    ) -> Optional[any]:
+        if self.pool is None:
+            raise RuntimeError("База данных не подключена. Вызовите сначала connect()")
+
+        async with self.pool.acquire() as conn:
+            return await conn.fetchval(query, *args)
 
     async def fetchrow(
             self,
