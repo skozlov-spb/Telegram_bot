@@ -8,9 +8,10 @@ from aiogram.utils.chat_action import ChatActionSender
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from create_bot import bot, admins
 from keyboards.all_keyboards import admin_panel_kb, admin_delete_menu_kb
-from db_handler.db_utils import DBUtils, get_admin_ids
+from db_handler.db_utils import DBUtils
 from db_handler.db_class import Database
 from keyboards.all_keyboards import main_kb
+from aiogram.exceptions import TelegramBadRequest
 
 db_utils = DBUtils(db=Database(), bot=bot)
 
@@ -69,6 +70,9 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
             f"Всего пользователей: {stats['total_users']}\n"
             f"Неактивные пользователи: {stats['inactive_percent']}%\n"
             # f"Подписанные на рассылку: {stats['subscribed_users']}"
+            f"Повторных обращений: {stats['repeat_usage_percent']}%\n"
+            f"WAU: {stats['wau']}\n"
+            f"Пользователей удаливших бот: {stats["blocked_users"]}\n"
         )
         await callback.message.answer(response, parse_mode="Markdown", reply_markup=main_kb(user_id))
 
