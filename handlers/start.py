@@ -467,57 +467,13 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             await callback.message.answer("⚠️ *Некорректный идентификатор темы или страницы.*", parse_mode="Markdown")
             await callback.answer()
 
-<<<<<<< HEAD
-        theme_name = themes[theme_id]
-        subthemes = await db_utils.get_subthemes(theme_name)
-        if not subthemes or subtheme_id < 0 or subtheme_id >= len(subthemes):
-            await callback.message.answer(f"⚠️ *Подтема для __{theme_name}__ не найдена.*", parse_mode="Markdown")
-            await callback.answer()
-            await db_utils.db.close()
-            return
-
-        subtheme_name = subthemes[subtheme_id]
-        recommendations = await db_utils.get_expert_recommendations(subtheme_name)
-        if not recommendations:
-            await callback.message.answer(f"⚠️ *Рекомендации по теме '{subtheme_name}' не найдены.*",
-                                          parse_mode="Markdown")
-            await callback.answer()
-            await db_utils.db.close()
-            return
-
-        experts = list(recommendations.items())
-        if current_index < 0 or current_index >= len(experts):
-            await callback.answer("⚠️ Больше экспертов нет.")
-            await db_utils.db.close()
-            return
-
-        expert_id, info = experts[current_index]
-        theme_id_db = await db_utils.get_theme_id(theme_name, subtheme_name)
-        await db_utils.log_user_activity(user_id=callback.from_user.id, activity_type='get_expert_recommendation',
-                                         theme_id=theme_id_db)
-
-        response = f"*{subtheme_name}* 📚\n\n"
-        response += f"👤 **{info['name']}** — *{info['position'][0].lower() + info['position'][1:]}.*\n\n"
-        response += "__Книги:__\n"
-        for book_id, description in info['books']:
-            book_name = book_id
-            response += f"📖 *{book_name}*\n💬 {description}\n\n"
-
-        buttons = []
-        if current_index > 0:
-            buttons.append(InlineKeyboardButton(text="◄ Назад", callback_data=f"expert_{subtheme_id}_prev_{theme_id}"))
-        if current_index < len(experts) - 1:
-            buttons.append(InlineKeyboardButton(text="Вперёд ►", callback_data=f"expert_{subtheme_id}_next_{theme_id}"))
-        if buttons:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[buttons])
-=======
     elif data.startswith("subtheme_"):
         parts = data.split("_")
         if len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
             subtheme_id = int(parts[1])
             theme_id = int(parts[2])
             await display_expert(subtheme_id, theme_id, 0, callback)
->>>>>>> get_books
+
         else:
             await callback.message.answer("⚠️ *Некорректный идентификатор подтемы или темы.*", parse_mode="Markdown")
             await callback.answer()
