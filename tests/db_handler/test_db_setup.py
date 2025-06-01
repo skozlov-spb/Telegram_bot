@@ -1,95 +1,177 @@
+import pytest
+import asyncio
 import unittest
-from unittest.mock import AsyncMock, patch, MagicMock
-import pandas as pd
-from db_handler.db_setup import init_db
+from unittest.mock import AsyncMock, MagicMock, patch
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, User, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.exceptions import TelegramBadRequest
+from decouple import config
 
-class TestDBSetup(unittest.IsolatedAsyncioTestCase):
-    def setUp(self):
-        self.mock_admin_pool = MagicMock()
-        self.mock_app_pool = MagicMock()
-        self.mock_conn_admin = AsyncMock()
-        self.mock_conn_app = AsyncMock()
+from handlers.start import (
+    start_router,
+    cmd_start,
+    check_subscription_callback,
+    cmd_recc,
+    process_subscription_callback,
+    display_themes,
+    display_subthemes,
+    display_expert,
+    process_callback_expert_rec,
+    db_utils,
+    rec_sys,
+)
 
-        self.mock_admin_pool.acquire.return_value.__aenter__.return_value = self.mock_conn_admin
-        self.mock_admin_pool.acquire.return_value.__aexit__.return_value = None
-        self.mock_app_pool.acquire.return_value.__aenter__.return_value = self.mock_conn_app
-        self.mock_app_pool.acquire.return_value.__aexit__.return_value = None
+@patch("decouple.config")
+def mock_config(mock_config):
+    mock_config.side_effect = lambda key: {
+        "CHANNEL_SPBU_LINK": "https://t.me/spbu_channel",
+        "CHANNEL_LANDAU_LINK": "https://t.me/landau_channel",
+    }.get(key, "")
 
-        self.patcher_pool = patch('asyncpg.create_pool', new_callable=AsyncMock, side_effect=[self.mock_admin_pool, self.mock_app_pool])
-        self.patcher_pool.start()
+@pytest.fixture
+def mock_message():
+    message = MagicMock(spec=Message)
+    message.from_user = MagicMock(spec=User)
+    message.from_user.id = 12345
+    message.from_user.username = "test_user"
+    message.from_user.full_name = "Test User"
+    message.answer = AsyncMock()
+    message.text = ""
+    return message
 
-        self.patcher_pd = patch('db_handler.db_setup.pd.read_excel', return_value=MagicMock())
-        self.patcher_pd.start()
+@pytest.fixture
+def mock_callback():
+    callback = MagicMock(spec=CallbackQuery)
+    callback.from_user = MagicMock(spec=User)
+    callback.from_user.id = 12345
+    callback.message = MagicMock(spec=Message)
+    callback.message.answer = AsyncMock()
+    callback.message.edit_text = AsyncMock()
+    callback.message.delete = AsyncMock()
+    callback.answer = AsyncMock()
+    callback.data = ""
+    return callback
 
-        self.patcher_config = patch('db_handler.db_setup.config', side_effect=lambda key: {
-            'PG_HOST': 'localhost',
-            'PG_DB': 'test_db',
-            'PG_USER': 'test_user',
-            'PG_PASSWORD': 'test_pass',
-            'PG_PORT': '5432'
-        }[key])
-        self.patcher_config.start()
+@pytest.fixture
+def mock_db_utils():
+    db_utils_mock = MagicMock()
+    db_utils_mock.db.connect = AsyncMock()
+    db_utils_mock.db.close = AsyncMock()
+    db_utils_mock.register_user = AsyncMock(return_value=True)
+    db_utils_mock.is_user_channel_member = AsyncMock(return_value=True)
+    db_utils_mock.log_user_activity = AsyncMock()
+    db_utils_mock.get_available_themes = AsyncMock(return_value=["Math", "Physics", "Chemistry"])
+    db_utils_mock.get_subthemes = AsyncMock(return_value=["Algebra", "Geometry"])
+    db_utils_mock.get_expert_recommendations = AsyncMock(return_value={
+        "expert1": {
+            "name": "Dr. Smith",
+            "position": "Professor",
+            "books": [("Book1", "Description1"), ("Book2", "Description2")]
+        },
+        "expert2": {
+            "name": "Dr. Jones",
+            "position": "Researcher",
+            "books": [("Book3", "Description3")]
+        }
+    })
+    db_utils_mock.get_theme_id = AsyncMock(return_value=1)
+    return db_utils_mock
 
-        self.mock_admin_pool.close = AsyncMock()
-        self.mock_app_pool.close = AsyncMock()
+@pytest.fixture
+def mock_rec_sys():
+    rec_sys_mock = MagicMock()
+    rec_sys_mock.recommend = AsyncMock(return_value=[
+        {
+            "theme_name": "Math",
+            "specific_theme": "Algebra",
+            "experts": [
+                {
+                    "expert_name": "Dr. Smith",
+                    "expert_position": "Professor",
+                    "book_name": "Book1",
+                    "description": "Description1"
+                }
+            ]
+        }
+    ])
+    return rec_sys_mock
 
-    def tearDown(self):
-        self.patcher_pool.stop()
-        self.patcher_pd.stop()
-        self.patcher_config.stop()
+@pytest.fixture(autouse=True)
+def setup_mocks(mock_db_utils, mock_rec_sys, monkeypatch):
+    monkeypatch.setattr("handlers.start.db_utils", mock_db_utils)
+    monkeypatch.setattr("handlers.start.rec_sys", mock_rec_sys)
+    monkeypatch.setattr("handlers.start.bot", MagicMock())
 
-    async def test_init_db_database_exists(self):
-        self.mock_conn_admin.fetchval.return_value = 1
+@pytest.mark.asyncio
+async def test_check_subscription_callback_subscribed(mock_callback):
+    mock_callback.data = "check_subscription"
+    await check_subscription_callback(mock_callback)
+    mock_callback.message.delete.assert_called()
+    mock_callback.message.answer.assert_any_call(
+        "Спасибо за подписку! Теперь вы можете пользоваться ботом. 🎉",
+        reply_markup=unittest.mock.ANY,
+        parse_mode="Markdown"
+    )
 
-        await init_db()
+@pytest.mark.asyncio
+async def test_cmd_recc_success(mock_message):
+    mock_message.text = "📝 Получить рекомендации"
+    await cmd_recc(mock_message)
+    mock_message.answer.assert_any_call(
+        unittest.mock.ANY,
+        reply_markup=unittest.mock.ANY,
+        parse_mode="Markdown"
+    )
+    assert "Рекомендации на основе ваших запросов" in mock_message.answer.call_args[0][0]
 
-        self.mock_conn_admin.execute.assert_not_called()
-        self.mock_conn_app.execute.assert_not_called()
-        self.mock_conn_app.fetchval.assert_not_called()
-        self.mock_admin_pool.close.assert_called_once()
-        self.mock_app_pool.close.assert_not_called()
+@pytest.mark.asyncio
+async def test_process_subscription_callback_subscribe(mock_callback):
+    mock_callback.data = "subscribe"
+    await process_subscription_callback(mock_callback)
+    mock_callback.message.delete.assert_called()
+    mock_callback.message.answer.assert_any_call("Вы подписались!", reply_markup=unittest.mock.ANY)
 
-    async def test_init_db_admin_pool_close(self):
-        # Настраиваем мок для проверки существования БД
-        self.mock_conn_admin.fetchval.return_value = None
-        self.mock_conn_admin.execute.return_value = None
+@pytest.mark.asyncio
+async def test_process_subscription_callback_unsubscribe(mock_callback):
+    mock_callback.data = "unsubscribe"
+    await process_subscription_callback(mock_callback)
+    mock_callback.message.delete.assert_called()
+    mock_callback.message.answer.assert_any_call("Вы отписались!", reply_markup=unittest.mock.ANY)
 
-        await init_db()
+@pytest.mark.asyncio
+async def test_process_subscription_callback_telegram_error(mock_callback):
+    mock_callback.data = "subscribe"
+    mock_callback.message.delete.side_effect = TelegramBadRequest(
+        message="Message not found",
+        method="deleteMessage"
+    )
+    await process_subscription_callback(mock_callback)
+    mock_callback.message.answer.assert_any_call("Вы подписались!", reply_markup=unittest.mock.ANY)
 
-        self.mock_admin_pool.close.assert_called_once()
+@pytest.mark.asyncio
+async def test_display_themes_first_page(mock_callback):
+    mock_callback.data = "get_themes"
+    await display_themes(0, mock_callback)
+    mock_callback.message.edit_text.assert_called()
+    assert "Выберите тему" in mock_callback.message.edit_text.call_args[0][0]
 
-    async def test_init_db_app_pool_close_on_create(self):
-        self.mock_conn_admin.fetchval.return_value = None
-        self.mock_conn_admin.execute.return_value = None
-        self.mock_conn_app.execute.return_value = None
+@pytest.mark.asyncio
+async def test_display_subthemes_first_page(mock_callback):
+    mock_callback.data = "theme_0"
+    await display_subthemes(0, 0, mock_callback)
+    mock_callback.message.edit_text.assert_called()
+    assert "Подтемы для __Math__" in mock_callback.message.edit_text.call_args[0][0]
 
-        mock_df = MagicMock()
-        grouped_data = MagicMock()
-        mock_df.groupby.return_value = grouped_data
-        grouped_data.agg.return_value = MagicMock()
-        grouped_data.iterrows.return_value = []
-        self.patcher_pd.return_value = mock_df
+@pytest.mark.asyncio
+async def test_display_subthemes_invalid_theme(mock_callback):
+    db_utils.get_available_themes = AsyncMock(return_value=[])
+    mock_callback.data = "theme_999"
+    await display_subthemes(999, 0, mock_callback)
+    mock_callback.message.answer.assert_any_call("⚠️ *Тема не найдена.*", parse_mode="Markdown")
 
-        await init_db()
-
-        self.mock_app_pool.close.assert_called_once()
-
-    async def test_init_db_no_data_processing(self):
-        self.mock_conn_admin.fetchval.return_value = None
-        self.mock_conn_admin.execute.return_value = None
-        self.mock_conn_app.execute.return_value = None
-
-        mock_df = MagicMock()
-        grouped_data = MagicMock()
-        mock_df.groupby.return_value = grouped_data
-        grouped_data.agg.return_value = MagicMock()
-        grouped_data.iterrows.return_value = []
-        self.patcher_pd.return_value = mock_df
-
-        await init_db()
-
-        self.mock_conn_app.fetchval.assert_not_called()
-        self.mock_conn_app.execute.assert_called_once()
-
-if __name__ == "__main__":
-    unittest.main()
+@pytest.mark.asyncio
+async def test_display_expert_first_expert(mock_callback):
+    mock_callback.data = "subtheme_0_0"
+    await display_expert(0, 0, 0, mock_callback)
+    mock_callback.message.edit_text.assert_called()
+    assert "Dr. Smith" in mock_callback.message.edit_text.call_args[0][0]

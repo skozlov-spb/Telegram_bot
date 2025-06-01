@@ -1,4 +1,5 @@
 import asyncpg
+import pandas as pd
 from decouple import config
 
 from .db_class import Database

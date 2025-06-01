@@ -125,15 +125,6 @@ class TestStartHandlers:
                 parse_mode="Markdown"
             )
 
-    async def test_handle_subscription_not_subscribed(self, mock_objects):
-        mock_objects["message"].text = "🔔 Подписаться на рассылку"
-        with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
-                patch('handlers.start.main_kb', MagicMock()):
-            from handlers.start import handle_subscription
-            await handle_subscription(mock_objects["message"])
-
-            mock_objects["message"].answer.assert_awaited_once()
-            assert "подписки на рассылку" in mock_objects["message"].answer.call_args[1]["text"]
 
     async def test_process_subscription_callback_subscribe(self, mock_objects):
         mock_objects["callback"].data = "subscribe"

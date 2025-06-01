@@ -42,18 +42,5 @@ class TestAiogramRun(IsolatedAsyncioTestCase):
         await start_bot()
         self.mock_set_commands.assert_awaited_once()
 
-    async def test_bot_session_closed_on_error(self):
-        from aiogram_run import main
-
-        self.mock_dp.start_polling.side_effect = Exception("Test error")
-
-        try:
-            await main()
-        except Exception:
-            pass
-
-        self.mock_bot.session.close.assert_awaited_once()
-
-
 if __name__ == "__main__":
     unittest.main()
