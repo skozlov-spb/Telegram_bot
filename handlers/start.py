@@ -72,7 +72,6 @@ async def cmd_recc(message: Message):
     await db_utils.db.connect()
     await db_utils.log_user_activity(user_id, activity_type='get_recommendation', theme_id=None)
 
-    # Initialize recommendation system
     try:
         recommendations = await rec_sys.recommend(user_id)
 
@@ -154,7 +153,7 @@ async def process_subscription_callback(callback: CallbackQuery):
         activity_type=activity_type,
         theme_id=None
     )
-    
+
     response_text = "Вы подписались!" if action == "subscribe" else "Вы отписались!"
 
     try:
@@ -473,7 +472,6 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             subtheme_id = int(parts[1])
             theme_id = int(parts[2])
             await display_expert(subtheme_id, theme_id, 0, callback)
-
         else:
             await callback.message.answer("⚠️ *Некорректный идентификатор подтемы или темы.*", parse_mode="Markdown")
             await callback.answer()
