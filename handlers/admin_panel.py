@@ -6,15 +6,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from create_bot import admins, bot
-from keyboards.all_keyboards import admin_panel_kb
+from create_bot import bot, admins
+from keyboards.all_keyboards import admin_panel_kb, admin_delete_menu_kb
 from db_handler.db_utils import DBUtils
 from db_handler.db_class import Database
 from keyboards.all_keyboards import main_kb
+from aiogram.exceptions import TelegramBadRequest
 
-
-db = Database()
-db_utils = DBUtils(db=db, bot=bot)
+db_utils = DBUtils(db=Database(), bot=bot)
 
 admin_router = Router()
 
@@ -43,6 +42,15 @@ async def admin_panel(message: Message):
     )
 
 
+@admin_router.callback_query(F.data == "admin_delete_menu")
+async def show_delete_menu(callback: CallbackQuery):
+    await callback.message.edit_text(
+        "Выберите что хотите удалить:",
+        reply_markup=admin_delete_menu_kb()
+    )
+    await callback.answer()
+
+
 @admin_router.callback_query(F.data.in_(
     ['admin_get_stats', 'admin_upload_data', 'admin_delete_book']))
 async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
@@ -61,7 +69,10 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
             f"📊 **Статистика**:\n"
             f"Всего пользователей: {stats['total_users']}\n"
             f"Неактивные пользователи: {stats['inactive_percent']}%\n"
-            f"Подписанные на рассылку: {stats['subscribed_users']}"
+            # f"Подписанные на рассылку: {stats['subscribed_users']}"
+            f"Повторных обращений: {stats['repeat_usage_percent']}%\n"
+            f"WAU: {stats['wau']}\n"
+            f"Пользователей удаливших бот: {stats["blocked_users"]}\n"
         )
         await callback.message.answer(response, parse_mode="Markdown", reply_markup=main_kb(user_id))
 
@@ -121,7 +132,8 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
         current_themes = themes[start_idx:end_idx]
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"admin_theme_{current_themes.index(theme) + start_idx}")]
+            [InlineKeyboardButton(text=f"📖 {theme}",
+                                  callback_data=f"admin_theme_{current_themes.index(theme) + start_idx}")]
             for theme in current_themes
         ])
 
@@ -136,11 +148,11 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")]
         )
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="🔙 Назад в админ-панель", callback_data="admin_back_to_panel")]
+            [InlineKeyboardButton(text="◄ Назад в админ-панель", callback_data="admin_back_to_panel")]
         )
 
         await callback.message.edit_text("**Выберите тему для удаления** 📚\n*Доступные категории:*",
-                                        reply_markup=keyboard, parse_mode="Markdown")
+                                         reply_markup=keyboard, parse_mode="Markdown")
 
     elif action.startswith("admin_theme_") or action.startswith("admin_subthemes_"):
         if action.startswith("admin_theme_"):
@@ -168,7 +180,9 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
         current_subthemes = subthemes[start_idx:end_idx]
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"📋 {subtheme}", callback_data=f"admin_delete_subtheme_{theme_id}_{current_subthemes.index(subtheme) + start_idx}")]
+            [InlineKeyboardButton(text=f"📋 {subtheme}",
+                                  callback_data=f"admin_delete_subtheme_{theme_id}_"
+                                                f"{current_subthemes.index(subtheme) + start_idx}")]
             for subtheme in current_subthemes
         ])
 
@@ -185,11 +199,11 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")]
         )
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="🔙 Назад к темам", callback_data=f"admin_select_theme")]
+            [InlineKeyboardButton(text="◄ Назад к темам", callback_data=f"admin_select_theme")]
         )
 
         await callback.message.edit_text(f"**Подтемы для __{theme_name}__** 📋\n*Выберите подтему для удаления:*",
-                                        reply_markup=keyboard, parse_mode="Markdown")
+                                         reply_markup=keyboard, parse_mode="Markdown")
 
     elif action.startswith("admin_delete_subtheme_"):
         theme_id, subtheme_id = action[len("admin_delete_subtheme_"):].split("_")
@@ -209,18 +223,19 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
         )
 
         confirm_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Да", callback_data="confirm_subtheme_delete"),
-             InlineKeyboardButton(text="❌ Нет", callback_data="cancel_subtheme_delete")]
+            [InlineKeyboardButton(text="Да", callback_data="confirm_subtheme_delete"),
+             InlineKeyboardButton(text="Нет", callback_data="cancel_subtheme_delete")]
         ])
 
         await callback.message.edit_text(
-            f"⚠️ Вы уверены, что хотите удалить подборку?\n{theme_name}/{subtheme_name}",
+            f"⚠️ Вы уверены, что хотите удалить подборку «_{theme_name}/{subtheme_name}_»?",
             reply_markup=confirm_keyboard
         )
         await state.set_state(AdminActions.waiting_subtheme_delete_confirmation)
 
     await callback.answer()
     await db_utils.db.close()
+
 
 @admin_router.callback_query(
     AdminActions.waiting_subtheme_delete_confirmation,
@@ -235,13 +250,13 @@ async def handle_subtheme_deletion(callback: CallbackQuery, state: FSMContext):
         if success:
             await callback.message.delete()
             await callback.message.answer(
-                f"✅ Подборка '{data['theme_name']}/{data['subtheme_name']}' успешно удалена!",
+                f"✅ Подборка «{data['theme_name']}/{data['subtheme_name']}» успешно удалена!",
                 reply_markup=main_kb(callback.from_user.id)
             )
         else:
             await callback.message.delete()
             await callback.message.answer(
-                f"❌ Не удалось удалить подборку '{data['theme_name']}/{data['subtheme_name']}'",
+                f"❌ Не удалось удалить подборку «{data['theme_name']}/{data['subtheme_name']}»",
                 reply_markup=main_kb(callback.from_user.id)
             )
     else:
@@ -257,7 +272,7 @@ async def handle_subtheme_deletion(callback: CallbackQuery, state: FSMContext):
 
 
 @admin_router.callback_query(F.data.in_(['admin_select_expert', 'admin_back_to_panel']) |
-                            F.data.regexp(r'^(admin_experts_page|admin_delete_expert)_'))
+                             F.data.regexp(r'^(admin_experts_page|admin_delete_expert)_'))
 async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.connect()
     user_id = callback.from_user.id
@@ -297,8 +312,8 @@ async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
         current_experts = experts[start_idx:end_idx]
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"👤 {expert[0]} ({expert[1]})",
-                                 callback_data=f"admin_delete_expert_{current_experts.index(expert) + start_idx}")]
+            [InlineKeyboardButton(text=f"👤 {expert[0]} — {expert[1][0].lower() + expert[1][1:]}",
+                                  callback_data=f"admin_delete_expert_{current_experts.index(expert) + start_idx}")]
             for expert in current_experts
         ])
 
@@ -313,11 +328,11 @@ async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"admin_page_{page}")]
         )
         keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="🔙 Назад в админ-панель", callback_data="admin_back_to_panel")]
+            [InlineKeyboardButton(text="◄ Назад в админ-панель", callback_data="admin_back_to_panel")]
         )
 
         await callback.message.edit_text("**Выберите эксперта для удаления** 👤\n*Доступные эксперты:*",
-                                        reply_markup=keyboard, parse_mode="Markdown")
+                                         reply_markup=keyboard, parse_mode="Markdown")
 
     elif action.startswith("admin_delete_expert_"):
         expert_id = int(action[len("admin_delete_expert_"):])
@@ -343,6 +358,7 @@ async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
 
     await callback.answer()
     await db_utils.db.close()
+
 
 @admin_router.callback_query(
     AdminActions.waiting_expert_delete_confirmation,
@@ -469,12 +485,12 @@ async def invalid_file_type(message: Message, state: FSMContext):
     await state.clear()
     await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).", reply_markup=main_kb(message.from_user.id))
 
-@admin_router.callback_query(F.data == "admin_broadcast")
-async def start_broadcast(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(AdminActions.waiting_broadcast_message)
-    await callback.message.answer("Введите сообщение для рассылки:")
-    await callback.answer()
 
+# @admin_router.callback_query(F.data == "admin_broadcast")
+# async def start_broadcast(callback: CallbackQuery, state: FSMContext):
+#     await state.set_state(AdminActions.waiting_broadcast_message)
+#     await callback.message.answer("Введите сообщение для рассылки:")
+#     await callback.answer()
 
 @admin_router.callback_query(F.data == "admin_back_to_menu")
 async def back_to_main_menu(callback: CallbackQuery):
@@ -538,8 +554,8 @@ async def process_broadcast_message(message: Message, state: FSMContext):
                 photo=content_data['photo_id'],
                 caption=confirm_text.strip(),
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_broadcast"),
-                     InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_broadcast")]
+                    [InlineKeyboardButton(text="Подтвердить", callback_data="confirm_broadcast"),
+                     InlineKeyboardButton(text="Отменить", callback_data="cancel_broadcast")]
                 ])
             )
         else:
@@ -548,8 +564,8 @@ async def process_broadcast_message(message: Message, state: FSMContext):
             await message.answer(
                 confirm_text,
                 reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_broadcast"),
-                     InlineKeyboardButton(text="❌ Отменить", callback_data="cancel_broadcast")]
+                    [InlineKeyboardButton(text="Подтвердить", callback_data="confirm_broadcast"),
+                     InlineKeyboardButton(text="Отменить", callback_data="cancel_broadcast")]
                 ])
             )
 
@@ -561,6 +577,7 @@ async def process_broadcast_message(message: Message, state: FSMContext):
 
     finally:
         await db_utils.db.close()
+
 
 @admin_router.callback_query(
     AdminActions.waiting_broadcast_confirmation,
@@ -648,6 +665,11 @@ async def process_admin_id(message: Message, state: FSMContext):
 
         # Добавляем в список админов
         if new_admin_id not in admins:
+            await db_utils.db.connect()
+
+            await db_utils.assign_admin_role(new_admin_id)
+
+            await db_utils.db.close()
             admins.append(new_admin_id)
             # Здесь можно добавить сохранение в БД
             await message.answer(f"✅ Пользователь {user.full_name} (@{user.username}) добавлен в администраторы")
