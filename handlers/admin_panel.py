@@ -8,9 +8,10 @@ from aiogram.utils.chat_action import ChatActionSender
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from create_bot import bot, admins
 from keyboards.all_keyboards import admin_panel_kb, admin_delete_menu_kb
-from db_handler.db_utils import DBUtils, get_admin_ids
+from db_handler.db_utils import DBUtils
 from db_handler.db_class import Database
 from keyboards.all_keyboards import main_kb
+from aiogram.exceptions import TelegramBadRequest
 
 db_utils = DBUtils(db=Database(), bot=bot)
 
@@ -69,6 +70,9 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
             f"Всего пользователей: {stats['total_users']}\n"
             f"Неактивные пользователи: {stats['inactive_percent']}%\n"
             # f"Подписанные на рассылку: {stats['subscribed_users']}"
+            f"Повторных обращений: {stats['repeat_usage_percent']}%\n"
+            f"WAU: {stats['wau']}\n"
+            f"Пользователей удаливших бот: {stats["blocked_users"]}\n"
         )
         await callback.message.answer(response, parse_mode="Markdown", reply_markup=main_kb(user_id))
 
@@ -222,7 +226,7 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="Да", callback_data="confirm_subtheme_delete"),
              InlineKeyboardButton(text="Нет", callback_data="cancel_subtheme_delete")]
         ])
-        
+
         await callback.message.edit_text(
             f"⚠️ Вы уверены, что хотите удалить подборку «_{theme_name}/{subtheme_name}_»?",
             reply_markup=confirm_keyboard
@@ -240,7 +244,7 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
 async def handle_subtheme_deletion(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.connect()
     data = await state.get_data()
-    
+
     if callback.data == "confirm_subtheme_delete":
         success = await db_utils.delete_selection(data['theme_name'], data['subtheme_name'])
         if success:
@@ -261,7 +265,7 @@ async def handle_subtheme_deletion(callback: CallbackQuery, state: FSMContext):
             "❌ Удаление подборки отменено",
             reply_markup=main_kb(callback.from_user.id)
         )
-    
+
     await state.clear()
     await callback.answer()
     await db_utils.db.close()
@@ -345,7 +349,7 @@ async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
             [InlineKeyboardButton(text="✅ Да", callback_data="confirm_expert_delete"),
              InlineKeyboardButton(text="❌ Нет", callback_data="cancel_expert_delete")]
         ])
-        
+
         await callback.message.edit_text(
             f"⚠️ Вы уверены, что хотите удалить эксперта?\n{expert_name} ({expert_position})",
             reply_markup=confirm_keyboard
@@ -363,7 +367,7 @@ async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
 async def handle_expert_deletion(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.connect()
     data = await state.get_data()
-    
+
     if callback.data == "confirm_expert_delete":
         success = await db_utils.delete_expert(data['expert_name'], data['expert_position'])
         if success:
@@ -384,7 +388,7 @@ async def handle_expert_deletion(callback: CallbackQuery, state: FSMContext):
             "❌ Удаление эксперта отменено",
             reply_markup=main_kb(callback.from_user.id)
         )
-    
+
     await state.clear()
     await callback.answer()
     await db_utils.db.close()
@@ -424,21 +428,21 @@ async def process_uploaded_file(message: Message, state: FSMContext):
 @admin_router.message(AdminActions.waiting_book_name, F.from_user.id.in_(admins))
 async def process_book_name(message: Message, state: FSMContext):
     await state.update_data(book_name=message.text)
-    
+
     confirm_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(text="✅ Да", callback_data="confirm_delete"),
             InlineKeyboardButton(text="❌ Нет", callback_data="cancel_delete")
         ]
     ])
-    
+
     await message.answer(
         f"⚠️ Вы уверены, что хотите удалить книгу?\nНазвание: {message.text}",
         reply_markup=confirm_keyboard
     )
     await state.set_state(AdminActions.waiting_book_delete_confirmation)
-    
-    
+
+
 @admin_router.callback_query(
     AdminActions.waiting_book_delete_confirmation,
     F.data.in_(["confirm_delete", "cancel_delete"])
@@ -447,11 +451,11 @@ async def handle_delete_confirmation(callback: CallbackQuery, state: FSMContext)
     await db_utils.db.connect()
     try:
         data = await state.get_data()
-        
+
         if callback.data == "confirm_delete":
             book_name = data['book_name']
             success = await db_utils.delete_book(book_name)
-            
+
             if success:
                 await callback.message.answer(
                     f"✅ Книга '{book_name}' успешно удалена!",
@@ -467,10 +471,10 @@ async def handle_delete_confirmation(callback: CallbackQuery, state: FSMContext)
                 "❌ Удаление отменено",
                 reply_markup=admin_panel_kb()
             )
-            
+
     except Exception as e:
         await callback.message.answer("⚠️ Произошла ошибка при удалении", reply_markup=admin_panel_kb())
-    
+
     await state.clear()
     await callback.answer()
     await db_utils.db.close()
@@ -488,20 +492,19 @@ async def invalid_file_type(message: Message, state: FSMContext):
 #     await callback.message.answer("Введите сообщение для рассылки:")
 #     await callback.answer()
 
-
 @admin_router.callback_query(F.data == "admin_back_to_menu")
 async def back_to_main_menu(callback: CallbackQuery):
     try:
         await callback.message.delete()
     except TelegramBadRequest:
         pass
-    
+
     await callback.message.answer(
         "Главное меню:",
         reply_markup=main_kb(callback.from_user.id)
     )
     await callback.answer()
-    
+
 
 @admin_router.message(
     AdminActions.waiting_broadcast_message,
@@ -512,7 +515,7 @@ async def process_broadcast_message(message: Message, state: FSMContext):
     await db_utils.db.connect()
     try:
         subscribers = await db_utils.get_subscribed_users()
-        
+
         if not subscribers:
             await message.answer("❌ Нет активных подписчиков для рассылки", reply_markup=admin_panel_kb())
             await state.clear()
@@ -545,7 +548,7 @@ async def process_broadcast_message(message: Message, state: FSMContext):
         if content_type == 'photo':
             # Добавляем подпись к фото в превью
             confirm_text += f"Текст к фото: {content_data['caption']}\n" if content_data['caption'] else ""
-            
+
             # Отправляем превью с фото
             await message.answer_photo(
                 photo=content_data['photo_id'],
@@ -571,7 +574,7 @@ async def process_broadcast_message(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"⚠️ Ошибка при подготовке рассылки: {str(e)}", reply_markup=admin_panel_kb())
         await state.clear()
-    
+
     finally:
         await db_utils.db.close()
 
@@ -584,11 +587,11 @@ async def handle_broadcast_confirmation(callback: CallbackQuery, state: FSMConte
     await db_utils.db.connect()
     try:
         data = await state.get_data()
-        
+
         if callback.data == "confirm_broadcast":
             subscribers = await db_utils.get_subscribed_users()
             success_count = 0
-            
+
             for user_id in subscribers:
                 try:
                     if data['content_type'] == 'photo':
@@ -603,30 +606,29 @@ async def handle_broadcast_confirmation(callback: CallbackQuery, state: FSMConte
                             text=data['content_data']['text']
                         )
                     success_count += 1
-                    await asyncio.sleep(0.1)  
+                    await asyncio.sleep(0.1)
                 except Exception as e:
                     print(f"Ошибка отправки пользователю {user_id}: {str(e)}")
-            
+
             report = (
                 f"📬 Рассылка завершена:\n"
                 f"Всего получателей: {data['subscribers_count']}\n"
                 f"Успешно отправлено: {success_count}\n"
                 f"Не удалось отправить: {data['subscribers_count'] - success_count}"
             )
-            
+
             await callback.message.answer(report, reply_markup=admin_panel_kb())
-            
+
         else:
             await callback.message.answer("❌ Рассылка отменена", reply_markup=admin_panel_kb())
 
     except Exception as e:
         await callback.message.answer(f"⚠️ Произошла ошибка при рассылке: {str(e)}", reply_markup=admin_panel_kb())
-    
+
     finally:
         await state.clear()
         await callback.answer()
         await db_utils.db.close()
-
 
 @admin_router.callback_query(F.data == "admin_add_admin")
 async def add_admin_start(callback: CallbackQuery, state: FSMContext):
@@ -639,7 +641,6 @@ async def add_admin_start(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-
 @admin_router.callback_query(F.data == "admin_cancel_add")
 async def cancel_add_admin(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -650,12 +651,11 @@ async def cancel_add_admin(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
-
 @admin_router.message(AdminActions.waiting_new_admin_id, F.text)
 async def process_admin_id(message: Message, state: FSMContext):
     try:
         new_admin_id = int(message.text)
-        
+
         # Проверяем существует ли пользователь
         try:
             user = await bot.get_chat(new_admin_id)

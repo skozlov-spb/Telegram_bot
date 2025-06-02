@@ -10,7 +10,7 @@ from decouple import config
 from db_handler.db_utils import DBUtils
 from recommendation_system.model import RecommendationSystem
 from db_handler.db_class import Database
-
+from aiogram.exceptions import TelegramBadRequest
 start_router = Router()
 
 db = Database()
@@ -72,7 +72,6 @@ async def cmd_recc(message: Message):
     await db_utils.db.connect()
     await db_utils.log_user_activity(user_id, activity_type='get_recommendation', theme_id=None)
 
-    # Initialize recommendation system
     try:
         recommendations = await rec_sys.recommend(user_id)
 
@@ -154,7 +153,7 @@ async def process_subscription_callback(callback: CallbackQuery):
         activity_type=activity_type,
         theme_id=None
     )
-    
+
     response_text = "Вы подписались!" if action == "subscribe" else "Вы отписались!"
 
     try:
@@ -169,6 +168,214 @@ async def process_subscription_callback(callback: CallbackQuery):
     await db_utils.db.close()
 
 
+# Функция для отображения списка тем с пагинацией
+async def display_themes(page: int, callback: CallbackQuery):
+    items_per_page = 5
+    themes = await db_utils.get_available_themes()
+    if not themes:
+        await callback.message.answer("⚠️ *Темы отсутствуют.*", parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    total_pages = (len(themes) + items_per_page - 1) // items_per_page
+    if page < 0 or page >= total_pages:
+        await callback.answer("⚠️ Страница не существует.")
+        return
+
+    start_idx = page * items_per_page
+    end_idx = min(start_idx + items_per_page, len(themes))
+    current_themes = themes[start_idx:end_idx]
+
+    # Создаем клавиатуру с кнопками тем
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"theme_{themes.index(theme)}")]
+        for theme in current_themes
+    ])
+
+    # Добавляем кнопки навигации по страницам
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="◄ Назад", callback_data=f"themes_page_{page - 1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="Вперёд ►", callback_data=f"themes_page_{page + 1}"))
+    if nav_buttons:
+        keyboard.inline_keyboard.append(nav_buttons)
+
+    # Добавляем информацию о странице и кнопку возврата
+    keyboard.inline_keyboard.append(
+        [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
+    )
+    keyboard.inline_keyboard.append(
+        [InlineKeyboardButton(text="◄ Вернуться в главное меню", callback_data="back_to_main")]
+    )
+
+    await callback.message.edit_text(
+        "**Выберите тему** 📚\n*Доступные категории:*",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+# Функция для отображения списка подтем с пагинацией
+async def display_subthemes(theme_id: int, page: int, callback: CallbackQuery):
+    themes = await db_utils.get_available_themes()
+    if not themes or theme_id < 0 or theme_id >= len(themes):
+        await callback.message.answer("⚠️ *Тема не найдена.*", parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    theme_name = themes[theme_id]
+    subthemes = await db_utils.get_subthemes(theme_name)
+    if not subthemes:
+        await callback.message.answer(f"⚠️ *Подтемы для __{theme_name}__ не найдены.*", parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    items_per_page = 5
+    total_pages = (len(subthemes) + items_per_page - 1) // items_per_page
+    if page < 0 or page >= total_pages:
+        await callback.answer("⚠️ Страница не существует.")
+        return
+
+    start_idx = page * items_per_page
+    end_idx = min(start_idx + items_per_page, len(subthemes))
+    current_subthemes = subthemes[start_idx:end_idx]
+
+    # Создаем клавиатуру с кнопками подтем
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"📋 {subtheme}", callback_data=f"subtheme_{subthemes.index(subtheme)}_{theme_id}")]
+        for subtheme in current_subthemes
+    ])
+
+    # Добавляем кнопки навигации по страницам
+    nav_buttons = []
+    if page > 0:
+        nav_buttons.append(InlineKeyboardButton(text="◄ Назад", callback_data=f"subthemes_{theme_id}_{page - 1}"))
+    if page < total_pages - 1:
+        nav_buttons.append(InlineKeyboardButton(text="Вперёд ►", callback_data=f"subthemes_{theme_id}_{page + 1}"))
+    if nav_buttons:
+        keyboard.inline_keyboard.append(nav_buttons)
+
+    # Добавляем информацию о странице и кнопку возврата
+    keyboard.inline_keyboard.append(
+        [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
+    )
+    keyboard.inline_keyboard.append(
+        [InlineKeyboardButton(text="◄ Вернуться к темам", callback_data="get_themes")]
+    )
+
+    await callback.message.edit_text(
+        f"**Подтемы для __{theme_name}__** 📋\n*Выберите подтему:*",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
+
+
+# Функция для отображения рекомендаций эксперта
+async def display_expert(subtheme_id: int, theme_id: int, expert_index: int, callback: CallbackQuery,
+                         book_page: int = 0):
+    themes = await db_utils.get_available_themes()
+    if not themes or theme_id < 0 or theme_id >= len(themes):
+        await callback.message.answer("⚠️ *Тема не найдена.*", parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    theme_name = themes[theme_id]
+    subthemes = await db_utils.get_subthemes(theme_name)
+    if not subthemes or subtheme_id < 0 or subtheme_id >= len(subthemes):
+        await callback.message.answer(f"⚠️ *Подтема для __{theme_name}__ не найдена.*", parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    subtheme_name = subthemes[subtheme_id]
+    recommendations = await db_utils.get_expert_recommendations(subtheme_name)
+    if not recommendations:
+        await callback.message.answer(f"⚠️ *Рекомендации по теме '{subtheme_name}' не найдены.*", parse_mode="Markdown")
+        await callback.answer()
+        return
+
+    experts = list(recommendations.items())
+    if expert_index < 0 or expert_index >= len(experts):
+        await callback.answer("⚠️ Эксперт не найден.")
+        return
+
+    expert_id, info = experts[expert_index]
+    theme_id_db = await db_utils.get_theme_id(theme_name, subtheme_name)
+    await db_utils.log_user_activity(
+        user_id=callback.from_user.id,
+        activity_type='get_expert_recommendation',
+        theme_id=theme_id_db
+    )
+
+    # Пагинация книг
+    books_per_page = 5
+    total_books = len(info['books'])
+    total_book_pages = (total_books + books_per_page - 1) // books_per_page
+
+    start_idx = book_page * books_per_page
+    end_idx = min(start_idx + books_per_page, total_books)
+    current_books = info['books'][start_idx:end_idx]
+
+    # Формируем текст
+    response = f"*{subtheme_name}* 📚\n\n"
+    response += f"👤 **{info['name']}** — *{info['position'][0] + info['position'][1:]}.*\n\n"
+    response += "__Книги:__\n"
+
+    for book_id, description in current_books:
+        response += f"📖 *{book_id}*\n💬 {description}\n\n"
+
+    if len(experts) > 1:
+        response += f"👨‍🏫 Эксперт {expert_index + 1} из {len(experts)}\n"
+
+    if total_book_pages > 1:
+        response += f"📄 Страница книг {book_page + 1} из {total_book_pages}"
+    # Кнопки
+    buttons = []
+
+    # Книги: назад/вперед
+    book_nav_buttons = []
+    if book_page > 0:
+        book_nav_buttons.append(InlineKeyboardButton(
+            text="◄ Предыдущие книги",
+            callback_data=f"books_{subtheme_id}_{theme_id}_{expert_index}_{book_page - 1}"
+        ))
+    if book_page < total_book_pages - 1:
+        book_nav_buttons.append(InlineKeyboardButton(
+            text="Следующие книги ►",
+            callback_data=f"books_{subtheme_id}_{theme_id}_{expert_index}_{book_page + 1}"
+        ))
+
+    # Эксперт: назад/вперед
+    expert_nav_buttons = []
+    if expert_index > 0:
+        expert_nav_buttons.append(InlineKeyboardButton(
+            text="◄ Предыдущий эксперт",
+            callback_data=f"expert_{subtheme_id}_prev_{theme_id}_{expert_index}"
+        ))
+    if expert_index < len(experts) - 1:
+        expert_nav_buttons.append(InlineKeyboardButton(
+            text="Следующий эксперт ►",
+            callback_data=f"expert_{subtheme_id}_next_{theme_id}_{expert_index}"
+        ))
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+    if book_nav_buttons:
+        keyboard.inline_keyboard.append(book_nav_buttons)
+    if expert_nav_buttons:
+        keyboard.inline_keyboard.append(expert_nav_buttons)
+
+    # Назад к подтемам
+    keyboard.inline_keyboard.append([
+        InlineKeyboardButton(
+            text=f"◄ Вернуться к подтемам {theme_name}",
+            callback_data=f"subthemes_{theme_id}_0"
+        )
+    ])
+
+    await callback.message.edit_text(response, reply_markup=keyboard, parse_mode="Markdown")
+
+
+# Обработчик команды "📚 Просмотреть подборки от экспертов"
 @start_router.message(F.text == "📚 Просмотреть подборки от экспертов")
 async def expert_recommendation(message: Message):
     await db_utils.db.connect()
@@ -185,238 +392,117 @@ async def expert_recommendation(message: Message):
     end_idx = min(start_idx + items_per_page, len(themes))
     current_themes = themes[start_idx:end_idx]
 
+    # Создаем клавиатуру с кнопками тем
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"theme_{themes.index(theme)}")]
         for theme in current_themes
     ])
 
+    # Добавляем кнопки навигации и возврата
     nav_buttons = []
     if page < total_pages - 1:
         nav_buttons.append(InlineKeyboardButton(text="Вперёд ►", callback_data=f"themes_page_{page + 1}"))
     if nav_buttons:
         keyboard.inline_keyboard.append(nav_buttons)
     keyboard.inline_keyboard.append(
-        [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")])
+        [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
+    )
     keyboard.inline_keyboard.append(
         [InlineKeyboardButton(text="◄ Вернуться в главное меню", callback_data="back_to_main")]
     )
 
-    await message.answer("**Выберите тему** 📚\n*Доступные категории:*",
-                         reply_markup=keyboard,
-                         parse_mode="Markdown")
+    await message.answer(
+        "**Выберите тему** 📚\n*Доступные категории:*",
+        reply_markup=keyboard,
+        parse_mode="Markdown"
+    )
     await db_utils.db.close()
 
 
+# Обработчик callback-запросов
 @start_router.callback_query(F.data.in_(['get_themes', 'back_to_main']) | F.data.regexp(
-    r'^(themes_page|theme|subthemes|subtheme|expert|page|index)_'))
+    r'^(themes_page|theme|subthemes|subtheme|expert|page|index|books)_'))
 async def process_callback_expert_rec(callback: CallbackQuery):
     data = callback.data
     await db_utils.db.connect()
 
     if data == "back_to_main":
         await callback.message.delete()
-        await callback.message.answer('**Выберите действие в меню ниже:',
-                                      reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
+        await callback.message.answer(
+            '**Выберите действие в меню ниже:',
+            reply_markup=main_kb(callback.from_user.id),
+            parse_mode="Markdown"
+        )
         await callback.answer()
-        await db_utils.db.close()
-        return
 
-    if data.startswith("themes_page_") or data == "get_themes":
-        if data == "get_themes":
-            page = 0
+    elif data == "get_themes":
+        await display_themes(0, callback)
+
+    elif data.startswith("themes_page_"):
+        parts = data.split("_")
+        if len(parts) == 3 and parts[2].isdigit():
+            page = int(parts[2])
+            await display_themes(page, callback)
         else:
-            page = int(data.split("_")[-1])
-        items_per_page = 5
-
-        themes = await db_utils.get_available_themes()
-        if not themes:
-            await callback.message.answer("⚠️ *Темы отсутствуют.*")
+            await callback.message.answer("⚠️ *Некорректный номер страницы.*", parse_mode="Markdown")
             await callback.answer()
-            await db_utils.db.close()
-            return
 
-        total_pages = (len(themes) + items_per_page - 1) // items_per_page
-        start_idx = page * items_per_page
-        end_idx = min(start_idx + items_per_page, len(themes))
-        current_themes = themes[start_idx:end_idx]
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"theme_{themes.index(theme)}")]
-            for theme in current_themes
-        ])
-
-        nav_buttons = []
-        if page > 0:
-            nav_buttons.append(InlineKeyboardButton(text="◄ Назад", callback_data=f"themes_page_{page - 1}"))
-        if page < total_pages - 1:
-            nav_buttons.append(InlineKeyboardButton(text="Вперёд ►", callback_data=f"themes_page_{page + 1}"))
-        if nav_buttons:
-            keyboard.inline_keyboard.append(nav_buttons)
-        keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")])
-        keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="◄ Вернуться в главное меню", callback_data="back_to_main")]
-        )
-
-        await callback.message.edit_text("**Выберите тему** 📚\n*Доступные категории:*", reply_markup=keyboard,
-                                         parse_mode="Markdown")
-
-    elif data.startswith("theme_") or data.startswith("subthemes_"):
-        if data.startswith("theme_"):
-            try:
-                theme_id = int(data[len("theme_"):])
-                page = 0
-            except ValueError:
-                await callback.message.answer("⚠️ *Некорректный идентификатор темы.*", parse_mode="Markdown")
-                await callback.answer()
-                await db_utils.db.close()
-                return
+    elif data.startswith("theme_"):
+        parts = data.split("_")
+        if len(parts) == 2 and parts[1].isdigit():
+            theme_id = int(parts[1])
+            await display_subthemes(theme_id, 0, callback)
         else:
-            try:
-                theme_id, page = map(int, data[len("subthemes_"):].split("_"))
-            except ValueError:
-                await callback.message.answer("⚠️ *Некорректный идентификатор темы или страницы.*",
-                                              parse_mode="Markdown")
-                await callback.answer()
-                await db_utils.db.close()
-                return
-
-        themes = await db_utils.get_available_themes()
-        if not themes or theme_id < 0 or theme_id >= len(themes):
-            await callback.message.answer("⚠️ *Тема не найдена.*", parse_mode="Markdown")
+            await callback.message.answer("⚠️ *Некорректный идентификатор темы.*", parse_mode="Markdown")
             await callback.answer()
-            await db_utils.db.close()
-            return
 
-        theme_name = themes[theme_id]
-        items_per_page = 5
-
-        subthemes = await db_utils.get_subthemes(theme_name)
-        if not subthemes:
-            await callback.message.answer(f"⚠️ *Подтемы для __{theme_name}__ не найдены.*", parse_mode="Markdown")
-            await callback.answer()
-            await db_utils.db.close()
-            return
-
-        total_pages = (len(subthemes) + items_per_page - 1) // items_per_page
-        start_idx = page * items_per_page
-        end_idx = min(start_idx + items_per_page, len(subthemes))
-        current_subthemes = subthemes[start_idx:end_idx]
-
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"📋 {subtheme}",
-                                  callback_data=f"subtheme_{current_subthemes.index(subtheme) + start_idx}_{theme_id}")]
-            for subtheme in current_subthemes
-        ])
-
-        nav_buttons = []
-        if page > 0:
-            nav_buttons.append(
-                InlineKeyboardButton(text="◄ Назад", callback_data=f"subthemes_{theme_id}_{page - 1}"))
-        if page < total_pages - 1:
-            nav_buttons.append(
-                InlineKeyboardButton(text="Вперёд ►", callback_data=f"subthemes_{theme_id}_{page + 1}"))
-        if nav_buttons:
-            keyboard.inline_keyboard.append(nav_buttons)
-        keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")])
-        keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text="◄ Вернуться к темам", callback_data="get_themes")]
-        )
-
-        await callback.message.edit_text(f"**Подтемы для __{theme_name}__** 📋\n*Выберите подтему:*",
-                                         reply_markup=keyboard, parse_mode="Markdown")
-
-    elif data.startswith("subtheme_") or data.startswith("expert_"):
-        if data.startswith("subtheme_"):
-            try:
-                subtheme_id, theme_id = map(int, data[len("subtheme_"):].split("_"))
-                current_index = 0
-            except ValueError:
-                await callback.message.answer("⚠️ *Некорректный идентификатор подтемы или темы.*",
-                                              parse_mode="Markdown")
-                await callback.answer()
-                await db_utils.db.close()
-                return
+    elif data.startswith("subthemes_"):
+        parts = data.split("_")
+        if len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
+            theme_id = int(parts[1])
+            page = int(parts[2])
+            await display_subthemes(theme_id, page, callback)
         else:
-            try:
-                subtheme_id, action, theme_id = data[len("expert_"):].split("_")
-                subtheme_id, theme_id = int(subtheme_id), int(theme_id)
-                current_index = int(callback.message.reply_markup.inline_keyboard[-1][0].callback_data.split("_")[-1])
-                if action == "next":
-                    current_index += 1
-                elif action == "prev":
-                    current_index -= 1
-            except ValueError:
-                await callback.message.answer("⚠️ *Некорректные данные для эксперта.*", parse_mode="Markdown")
-                await callback.answer()
-                await db_utils.db.close()
-                return
-
-        themes = await db_utils.get_available_themes()
-        if not themes or theme_id < 0 or theme_id >= len(themes):
-            await callback.message.answer("⚠️ *Тема не найдена.*", parse_mode="Markdown")
+            await callback.message.answer("⚠️ *Некорректный идентификатор темы или страницы.*", parse_mode="Markdown")
             await callback.answer()
-            await db_utils.db.close()
-            return
 
-        theme_name = themes[theme_id]
-        subthemes = await db_utils.get_subthemes(theme_name)
-        if not subthemes or subtheme_id < 0 or subtheme_id >= len(subthemes):
-            await callback.message.answer(f"⚠️ *Подтема для __{theme_name}__ не найдена.*", parse_mode="Markdown")
-            await callback.answer()
-            await db_utils.db.close()
-            return
-
-        subtheme_name = subthemes[subtheme_id]
-        recommendations = await db_utils.get_expert_recommendations(subtheme_name)
-        if not recommendations:
-            await callback.message.answer(f"⚠️ *Рекомендации по теме '{subtheme_name}' не найдены.*",
-                                          parse_mode="Markdown")
-            await callback.answer()
-            await db_utils.db.close()
-            return
-
-        experts = list(recommendations.items())
-        if current_index < 0 or current_index >= len(experts):
-            await callback.answer("⚠️ Больше экспертов нет.")
-            await db_utils.db.close()
-            return
-
-        expert_id, info = experts[current_index]
-        theme_id_db = await db_utils.get_theme_id(theme_name, subtheme_name)
-        await db_utils.log_user_activity(user_id=callback.from_user.id, activity_type='get_expert_recommendation',
-                                         theme_id=theme_id_db)
-
-        response = f"*{subtheme_name}* 📚\n\n"
-        response += f"👤 **{info['name']}** — *{info['position'][0].lower() + info['position'][1:]}.*\n\n"
-        response += "__Книги:__\n"
-        for book_id, description in info['books']:
-            book_name = book_id
-            response += f"📖 *{book_name}*\n💬 {description}\n\n"
-
-        buttons = []
-        if current_index > 0:
-            buttons.append(InlineKeyboardButton(text="◄ Назад", callback_data=f"expert_{subtheme_id}_prev_{theme_id}"))
-        if current_index < len(experts) - 1:
-            buttons.append(InlineKeyboardButton(text="Вперёд ►", callback_data=f"expert_{subtheme_id}_next_{theme_id}"))
-        if buttons:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[buttons])
+    elif data.startswith("subtheme_"):
+        parts = data.split("_")
+        if len(parts) == 3 and parts[1].isdigit() and parts[2].isdigit():
+            subtheme_id = int(parts[1])
+            theme_id = int(parts[2])
+            await display_expert(subtheme_id, theme_id, 0, callback)
         else:
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[])
+            await callback.message.answer("⚠️ *Некорректный идентификатор подтемы или темы.*", parse_mode="Markdown")
+            await callback.answer()
 
-        if len(experts) > 1:
-            keyboard.inline_keyboard.append(
-                [InlineKeyboardButton(text=f"👨‍🏫 Эксперт {current_index + 1} из {len(experts)}",
-                                      callback_data=f"index_{current_index}")]
-            )
+    elif data.startswith("expert_"):
+        parts = data.split("_")
+        if (len(parts) == 5 and parts[1].isdigit() and parts[3].isdigit() and
+                parts[4].isdigit() and parts[2] in ["next", "prev"]):
+            subtheme_id = int(parts[1])
+            action = parts[2]
+            theme_id = int(parts[3])
+            current_index = int(parts[4])
+            if action == "next":
+                current_index += 1
+            elif action == "prev":
+                current_index -= 1
+            await display_expert(subtheme_id, theme_id, current_index, callback)
+        else:
+            await callback.message.answer("⚠️ *Некорректные данные для эксперта.*", parse_mode="Markdown")
+            await callback.answer()
 
-        keyboard.inline_keyboard.append(
-            [InlineKeyboardButton(text=f"◄ Вернуться к подтемам {theme_name}",
-                                  callback_data=f"subthemes_{theme_id}_0")]
-        )
+    elif data.startswith("books_"):
+        parts = data.split("_")
+        if len(parts) == 5 and all(p.isdigit() for p in parts[1:]):
+            subtheme_id = int(parts[1])
+            theme_id = int(parts[2])
+            expert_index = int(parts[3])
+            book_page = int(parts[4])
+            await display_expert(subtheme_id, theme_id, expert_index, callback, book_page)
+    else:
+        await callback.message.answer("⚠️ *Неизвестное действие.*", parse_mode="Markdown")
+        await callback.answer()
 
-        await callback.message.edit_text(response, parse_mode="Markdown", reply_markup=keyboard)
-
-    await callback.answer()
     await db_utils.db.close()
