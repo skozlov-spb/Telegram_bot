@@ -4,6 +4,7 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from unittest import IsolatedAsyncioTestCase
 import sys
 import importlib
+from aiogram_run import start_bot
 
 
 class TestAiogramRun(IsolatedAsyncioTestCase):
@@ -37,10 +38,9 @@ class TestAiogramRun(IsolatedAsyncioTestCase):
         self.addCleanup(patch.stopall)
 
     async def test_start_bot_success(self):
-        from aiogram_run import start_bot
-
         await start_bot()
         self.mock_set_commands.assert_awaited_once()
+
 
 if __name__ == "__main__":
     unittest.main()

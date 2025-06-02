@@ -12,6 +12,7 @@ from keyboards.all_keyboards import set_commands
 from db_handler.db_utils import DBUtils
 from db_handler.db_utils import Database
 
+
 async def start_bot():
     await set_commands()
     if not scheduler.running:

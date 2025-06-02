@@ -69,10 +69,10 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
             f"📊 **Статистика**:\n"
             f"Всего пользователей: {stats['total_users']}\n"
             f"Неактивные пользователи: {stats['inactive_percent']}%\n"
+            f"Пользователей удаливших бот: {stats['blocked_users']}\n"
+            f"Процент повторных обращений (сессий): {stats['repeat_usage_percent']}%\n"
+            f"Еженедельно активные пользователи (WAU): {stats['wau']}\n"
             # f"Подписанные на рассылку: {stats['subscribed_users']}"
-            f"Повторных обращений: {stats['repeat_usage_percent']}%\n"
-            f"WAU: {stats['wau']}\n"
-            f"Пользователей удаливших бот: {stats["blocked_users"]}\n"
         )
         await callback.message.answer(response, parse_mode="Markdown", reply_markup=main_kb(user_id))
 
@@ -92,7 +92,7 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
 
 
 @admin_router.callback_query(F.data.in_(['admin_select_theme', 'admin_back_to_panel']) |
-                            F.data.regexp(r'^(admin_themes_page|admin_theme|admin_subthemes|admin_delete_subtheme)_'))
+                             F.data.regexp(r'^(admin_themes_page|admin_theme|admin_subthemes|admin_delete_subtheme)_'))
 async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.connect()
     user_id = callback.from_user.id
@@ -228,7 +228,7 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
         ])
 
         await callback.message.edit_text(
-            f"⚠️ Вы уверены, что хотите удалить подборку «_{theme_name}/{subtheme_name}_»?",
+            f"⚠️ Вы уверены, что хотите удалить подборку «{subtheme_name}» по теме «{theme_name}»?",
             reply_markup=confirm_keyboard
         )
         await state.set_state(AdminActions.waiting_subtheme_delete_confirmation)
@@ -250,13 +250,13 @@ async def handle_subtheme_deletion(callback: CallbackQuery, state: FSMContext):
         if success:
             await callback.message.delete()
             await callback.message.answer(
-                f"✅ Подборка «{data['theme_name']}/{data['subtheme_name']}» успешно удалена!",
+                f"✅ Подборка «{data['subtheme_name']}» по теме «{data['theme_name']}» успешно удалена!",
                 reply_markup=main_kb(callback.from_user.id)
             )
         else:
             await callback.message.delete()
             await callback.message.answer(
-                f"❌ Не удалось удалить подборку «{data['theme_name']}/{data['subtheme_name']}»",
+                f"❌ Не удалось удалить подборку «{data['subtheme_name']}» по теме «{data['theme_name']}»",
                 reply_markup=main_kb(callback.from_user.id)
             )
     else:
@@ -346,12 +346,12 @@ async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
         )
 
         confirm_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="✅ Да", callback_data="confirm_expert_delete"),
-             InlineKeyboardButton(text="❌ Нет", callback_data="cancel_expert_delete")]
+            [InlineKeyboardButton(text="Да", callback_data="confirm_expert_delete"),
+             InlineKeyboardButton(text="Нет", callback_data="cancel_expert_delete")]
         ])
 
         await callback.message.edit_text(
-            f"⚠️ Вы уверены, что хотите удалить эксперта?\n{expert_name} ({expert_position})",
+            f"⚠️ Вы уверены, что хотите удалить эксперта?\n{expert_name} — {expert_position[0].lower() + expert_position[1:]}",
             reply_markup=confirm_keyboard
         )
         await state.set_state(AdminActions.waiting_expert_delete_confirmation)
@@ -373,13 +373,13 @@ async def handle_expert_deletion(callback: CallbackQuery, state: FSMContext):
         if success:
             await callback.message.delete()
             await callback.message.answer(
-                f"✅ Эксперт '{data['expert_name']} ({data['expert_position']})' успешно удален!",
+                f"✅ Эксперт {data['expert_name']} — {data['expert_position'][0].lower() + data['expert_position'][1:]} успешно удален!",
                 reply_markup=main_kb(callback.from_user.id)
             )
         else:
             await callback.message.delete()
             await callback.message.answer(
-                f"❌ Не удалось удалить эксперта '{data['expert_name']} ({data['expert_position']})'",
+                f"❌ Не удалось удалить эксперта {data['expert_name']} — {data['expert_position'][0].lower() + data['expert_position'][1:]}",
                 reply_markup=main_kb(callback.from_user.id)
             )
     else:
@@ -399,7 +399,8 @@ async def process_uploaded_file(message: Message, state: FSMContext):
     await db_utils.db.connect()
     document = message.document
     if not document.file_name.endswith(('.xlsx', '.xls')):
-        await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).", reply_markup=main_kb(message.from_user.id))
+        await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).",
+                             reply_markup=main_kb(message.from_user.id))
         await state.clear()
         return
 
@@ -412,10 +413,12 @@ async def process_uploaded_file(message: Message, state: FSMContext):
             success = await db_utils.upload_data(file_path)
 
             if success:
-                await message.answer(f"✅ Данные из файла {document.file_name} успешно загружены!", reply_markup=main_kb(message.from_user.id))
+                await message.answer(f"✅ Данные из файла {document.file_name} успешно загружены!",
+                                     reply_markup=main_kb(message.from_user.id))
                 os.remove(file_path)
             else:
-                await message.answer(f"❌ Ошибка при загрузке данных из файла {document.file_name}", reply_markup=main_kb(message.from_user.id))
+                await message.answer(f"❌ Ошибка при загрузке данных из файла {document.file_name}",
+                                     reply_markup=main_kb(message.from_user.id))
 
             await state.clear()
 
@@ -431,8 +434,8 @@ async def process_book_name(message: Message, state: FSMContext):
 
     confirm_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [
-            InlineKeyboardButton(text="✅ Да", callback_data="confirm_delete"),
-            InlineKeyboardButton(text="❌ Нет", callback_data="cancel_delete")
+            InlineKeyboardButton(text="Да", callback_data="confirm_delete"),
+            InlineKeyboardButton(text="Нет", callback_data="cancel_delete")
         ]
     ])
 
@@ -457,16 +460,19 @@ async def handle_delete_confirmation(callback: CallbackQuery, state: FSMContext)
             success = await db_utils.delete_book(book_name)
 
             if success:
+                await callback.message.delete()
                 await callback.message.answer(
-                    f"✅ Книга '{book_name}' успешно удалена!",
+                    f"✅ Книга {book_name} успешно удалена!",
                     reply_markup=admin_panel_kb()
                 )
             else:
+                await callback.message.delete()
                 await callback.message.answer(
-                    f"❌ Не удалось удалить книгу '{book_name}'",
+                    f"❌ Не удалось удалить книгу {book_name}",
                     reply_markup=admin_panel_kb()
                 )
         else:
+            await callback.message.delete()
             await callback.message.answer(
                 "❌ Удаление отменено",
                 reply_markup=admin_panel_kb()
@@ -483,7 +489,8 @@ async def handle_delete_confirmation(callback: CallbackQuery, state: FSMContext)
 @admin_router.message(AdminActions.waiting_for_file)
 async def invalid_file_type(message: Message, state: FSMContext):
     await state.clear()
-    await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).", reply_markup=main_kb(message.from_user.id))
+    await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).",
+                         reply_markup=main_kb(message.from_user.id))
 
 
 # @admin_router.callback_query(F.data == "admin_broadcast")
@@ -630,6 +637,7 @@ async def handle_broadcast_confirmation(callback: CallbackQuery, state: FSMConte
         await callback.answer()
         await db_utils.db.close()
 
+
 @admin_router.callback_query(F.data == "admin_add_admin")
 async def add_admin_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminActions.waiting_new_admin_id)
@@ -641,6 +649,7 @@ async def add_admin_start(callback: CallbackQuery, state: FSMContext):
     )
     await callback.answer()
 
+
 @admin_router.callback_query(F.data == "admin_cancel_add")
 async def cancel_add_admin(callback: CallbackQuery, state: FSMContext):
     await state.clear()
@@ -650,6 +659,7 @@ async def cancel_add_admin(callback: CallbackQuery, state: FSMContext):
         reply_markup=admin_panel_kb()
     )
     await callback.answer()
+
 
 @admin_router.message(AdminActions.waiting_new_admin_id, F.text)
 async def process_admin_id(message: Message, state: FSMContext):

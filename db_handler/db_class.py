@@ -56,6 +56,7 @@ class Database:
 
         async with self.pool.acquire() as conn:
             return await conn.fetch(query, *args)
+
     async def fetchval(
             self,
             query: str,

@@ -32,8 +32,8 @@ class TestAllKeyboards(IsolatedAsyncioTestCase):
         self.assertEqual(len(keyboard.keyboard), 1)
         self.assertEqual(len(keyboard.keyboard[0]), 2)
 
-        self.assertEqual(keyboard.keyboard[0][0].text, "📝 Рекомендация")
-        self.assertEqual(keyboard.keyboard[0][1].text, "📚 Рекомендация экспертов")
+        self.assertEqual(keyboard.keyboard[0][0].text, "📚 Просмотреть подборки от экспертов")
+        self.assertEqual(keyboard.keyboard[0][1].text, "📝 Получить рекомендации")
 
     def test_admin_kb_structure(self):
         """Тестируем клавиатуру для администратора"""

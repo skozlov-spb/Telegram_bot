@@ -272,17 +272,19 @@ class DBUtils:
         2. Процент неактивных пользователей
         3. Число подписанных на рассылку
         """
-        try:
-            
-            total_users = await self.db.fetchval("SELECT COUNT(*) FROM users") or 0
+        total_users = await self.db.fetchval("SELECT COUNT(*) FROM users") or 0
 
-            if total_users == 0:
-                return {
-                "total_users": total_users,
-                "inactive_percent": 0.0,
+        if total_users == 0:
+            return {
+                "total_users": 0,
+                "inactive_percent": 0,
                 "subscribed_users": 0,
+                "blocked_users": 0,
+                "wau": 0,
+                "repeat_usage_percent": 0
             }
 
+        try:
             inactive_count = await self.db.fetchval(
                 """
                 SELECT COUNT(*)
@@ -311,7 +313,7 @@ class DBUtils:
                 """
             )
             
-                        # Число пользователей, удаливших бот (статус 'blocked')
+            # Число пользователей, удаливших бот (статус 'blocked')
             blocked_count = await self.db.fetchval("""
                 SELECT COUNT(*) 
                 FROM users 
@@ -346,7 +348,10 @@ class DBUtils:
                     GROUP BY user_id
                 )
                 SELECT 
-                    COUNT(*)::float / (SELECT COUNT(*) FROM distinct_interactions)
+                    CASE 
+                        WHEN (SELECT COUNT(*) FROM distinct_interactions) = 0 THEN 0
+                        ELSE COUNT(*)::float / (SELECT COUNT(*) FROM distinct_interactions)
+                    END
                 FROM distinct_interactions
                 WHERE interaction_count > 1
             """)
@@ -364,7 +369,7 @@ class DBUtils:
         except Exception as exc:
             logger.error(f"Ошибка получения статистики: {exc}")
             return {
-                "total_users": 0,
+                "total_users": total_users,
                 "inactive_percent": 0,
                 "subscribed_users": 0,
                 "blocked_users": 0,
@@ -778,13 +783,13 @@ class DBUtils:
                 try:
                     await self.bot.send_chat_action(user_id, 'typing')
                     await self.update_user_status(user_id, 'active')
-                    #await self.log_user_activity(user_id, activity_type='active', theme_id=None)
+                    # await self.log_user_activity(user_id, activity_type='active', theme_id=None)
                 except TelegramForbiddenError:
                     await self.update_user_status(user_id, 'blocked')
-                    #await self.log_user_activity(user_id, activity_type='blocked_bot', theme_id=None)
+                    # await self.log_user_activity(user_id, activity_type='blocked_bot', theme_id=None)
                 except TelegramBadRequest as e:
                     await self.update_user_status(user_id, 'inactive')
-                    #await self.log_user_activity(user_id, activity_type='chat_unavailable', theme_id=None)
+                    # await self.log_user_activity(user_id, activity_type='chat_unavailable', theme_id=None)
                 await asyncio.sleep(0.1)
         finally:
             await self.db.close()

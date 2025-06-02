@@ -125,7 +125,6 @@ class TestStartHandlers:
                 parse_mode="Markdown"
             )
 
-
     async def test_process_subscription_callback_subscribe(self, mock_objects):
         mock_objects["callback"].data = "subscribe"
         with patch('handlers.start.db_utils', mock_objects["db_utils"]), \

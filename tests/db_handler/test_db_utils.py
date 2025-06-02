@@ -4,6 +4,7 @@ from aiogram import Bot
 from db_handler.db_utils import DBUtils
 import pandas as pd
 
+
 class TestDBUtils:
     def setup_method(self):
         self.mock_db = AsyncMock()

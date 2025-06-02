@@ -38,7 +38,7 @@ def admin_panel_kb():
     admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📊 Получить статистику", callback_data="admin_get_stats")],
         [InlineKeyboardButton(text="📤 Загрузить данные", callback_data="admin_upload_data")],
-        [InlineKeyboardButton(text="🗑️ Удалить", callback_data="admin_delete_menu")],
+        [InlineKeyboardButton(text="🗑️ Удалить данные", callback_data="admin_delete_menu")],
         # [
         #     InlineKeyboardButton(text="🗑️ Книгу", callback_data="admin_delete_book"),
         #     InlineKeyboardButton(text="🗑️ Подборку", callback_data="admin_select_theme"),

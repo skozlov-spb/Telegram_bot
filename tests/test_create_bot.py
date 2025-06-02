@@ -7,6 +7,9 @@ from aiogram.enums import ParseMode
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import zoneinfo
+from decouple import config
+from create_bot import bot, dp, scheduler, admins, logger
+
 
 class TestCreateBot(unittest.TestCase):
     @patch('decouple.config')
@@ -17,7 +20,7 @@ class TestCreateBot(unittest.TestCase):
     def setUp(self, mock_scheduler, mock_dp, mock_bot, mock_logger, mock_config):
         mock_config.side_effect = lambda key: {
             'TOKEN': '7543327903:AAGhzCID6Q9cjsRS87Yb504pkEqMESIk-HY',
-            'ADMINS': '687660355',
+            'ADMINS': '1024650317',
             'TIMEZONE': 'Europe/Moscow'
         }.get(key)
 
@@ -38,7 +41,6 @@ class TestCreateBot(unittest.TestCase):
         self.mock_scheduler_instance.timezone = zoneinfo.ZoneInfo('Europe/Moscow')
         mock_scheduler.return_value = self.mock_scheduler_instance
 
-        from create_bot import bot, dp, scheduler, admins, logger
         self.bot = bot
         self.dp = dp
         self.scheduler = scheduler
@@ -59,13 +61,12 @@ class TestCreateBot(unittest.TestCase):
         self.assertEqual(str(self.scheduler.timezone), 'Europe/Moscow')
 
     def test_admins_initialization(self):
-        self.assertEqual(self.admins, [687660355])
-
+        self.assertEqual(self.admins, [1024650317])
 
     def test_config_not_modified(self):
-        from decouple import config
         self.assertEqual(config('TOKEN'), '7543327903:AAGhzCID6Q9cjsRS87Yb504pkEqMESIk-HY')
-        self.assertEqual(config('ADMINS'), '687660355')
+        self.assertEqual(config('ADMINS'), '1024650317')
+
 
 if __name__ == "__main__":
     unittest.main()

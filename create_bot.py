@@ -14,14 +14,13 @@ import csv
 
 scheduler = AsyncIOScheduler(timezone='Europe/Moscow')
 
-
-
 DB_CONFIG = {
     'user': config('PG_USER'),
     'password': config('PG_PASSWORD'),
     'database': config('PG_DB'),
     'host': config('PG_HOST')
 }
+
 
 async def create_backup():
     """Создание бэкапа базы данных"""
@@ -45,6 +44,7 @@ def schedule_jobs():
     """Функция для добавления заданий (может быть пустой)"""
     pass
 
+
 async def check_users_status_task(db_utils):
     """Проверяет статус всех пользователей."""
     logger.info("Запуск ежедневной проверки статуса пользователей")
@@ -53,6 +53,7 @@ async def check_users_status_task(db_utils):
         logger.info("Проверка статуса пользователей завершена")
     except Exception as e:
         logger.error(f"Ошибка при проверке статуса пользователей: {e}")
+
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -66,6 +67,7 @@ except (ValueError, KeyError) as e:
     logger.error(f"Ошибка при загрузке ADMINS из .env: {e}")
     admins = []
 
+
 async def update_admins(db_utils):
     """Обновляет список администраторов из базы данных."""
     global admins
@@ -76,7 +78,8 @@ async def update_admins(db_utils):
         logger.info(f"Список администраторов обновлён: {admins}")
     except Exception as e:
         logger.error(f"Ошибка при обновлении списка администраторов: {e}")
-        
+
+
 async def save_stats(db_utils):
     """Получает статистику и записывает в stats.csv"""
     logger.info("Запуск задачи по расписанию: сохранение статистики")

@@ -11,6 +11,7 @@ from db_handler.db_utils import DBUtils
 from recommendation_system.model import RecommendationSystem
 from db_handler.db_class import Database
 from aiogram.exceptions import TelegramBadRequest
+
 start_router = Router()
 
 db = Database()
@@ -59,7 +60,7 @@ async def check_subscription_callback(callback: CallbackQuery):
             reply_markup=main_kb(user_id),
             parse_mode="Markdown"
         )
-        await db_utils.log_user_activity(user_id, activity_type='subscribed_channels', theme_id=None) # Логируем
+        await db_utils.log_user_activity(user_id, activity_type='subscribed_channels', theme_id=None)  # Логируем
     else:
         await callback.answer("Вы еще не подписались на канал.", show_alert=True)  # Покажем всплывающее уведомление
 
@@ -329,8 +330,6 @@ async def display_expert(subtheme_id: int, theme_id: int, expert_index: int, cal
 
     if total_book_pages > 1:
         response += f"📄 Страница книг {book_page + 1} из {total_book_pages}"
-    # Кнопки
-    buttons = []
 
     # Книги: назад/вперед
     book_nav_buttons = []

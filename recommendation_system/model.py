@@ -37,7 +37,8 @@ class RecommendationSystem:
             partial(self._embed_texts_sync, texts),
         )
     
-    async def _cos_sim(self, a: torch.Tensor, b: torch.Tensor) -> np.ndarray:
+    @staticmethod
+    async def _cos_sim(a: torch.Tensor, b: torch.Tensor) -> np.ndarray:
         """Asynchronous wrapper for comparing cosine distances."""
         loop = asyncio.get_running_loop()
         similarities = await loop.run_in_executor(None, util.cos_sim, a, b)

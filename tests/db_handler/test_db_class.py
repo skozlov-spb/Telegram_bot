@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, patch, MagicMock
 from db_handler.db_class import Database
 
+
 class TestDatabase(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.db = Database()
@@ -104,6 +105,7 @@ class TestDatabase(unittest.IsolatedAsyncioTestCase):
     async def test_close_not_connected(self):
         self.db.pool = None
         await self.db.close()  # Не должно вызывать ошибок
+
 
 if __name__ == "__main__":
     unittest.main()
