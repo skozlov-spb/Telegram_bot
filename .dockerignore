@@ -1,0 +1,34 @@
+# Исключаем системные и IDE-файлы
+*.pyc
+__pycache__/
+*.pyo
+*.log
+*.swp
+.DS_Store
+.vscode/
+.idea/
+
+# Виртуальные окружения
+venv/
+env/
+.venv/
+
+# Логи и временные файлы
+*.sqlite3
+*.db
+*.backup
+*.tmp
+*.cache/
+*.pytest_cache/
+
+# Тестовые и прочие артефакты
+tests/
+coverage.xml
+htmlcov/
+
+# Файлы с секретами (если они случайно попали)
+*.pem
+*.key
+
+# Docker-файлы (если не нужны внутри образа)
+docker-compose.override.yml

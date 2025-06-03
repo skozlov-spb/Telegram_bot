@@ -1,0 +1,54 @@
+version: "3.9"
+
+services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram_bot
+    restart: always
+    env_file:
+      - .env
+    environment:
+      PG_HOST: db
+      PG_PORT: 5432
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+    command: python aiogram_run.py
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: telegram_web
+    restart: always
+    env_file:
+      - .env
+    environment:
+      PG_HOST: db
+      PG_PORT: 5432
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+    ports:
+      - "${SERVER_PORT:-8000}:8000"
+    command: python server.py
+
+  db:
+    image: postgres:15
+    container_name: telegram_db
+    restart: always
+    environment:
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

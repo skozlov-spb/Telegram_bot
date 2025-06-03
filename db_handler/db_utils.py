@@ -6,6 +6,7 @@ import psycopg2
 import asyncpg
 from asyncpg.pool import Pool
 from decouple import config
+from create_bot import admins
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramAPIError
@@ -26,27 +27,6 @@ ALLOWED_ACTIVITIES = [
     'pre_subscribed_SPBU',
     'pre_subscribed_landau'
 ]
-
-
-def get_admin_ids():
-    try:
-        conn = psycopg2.connect(
-            dbname=config("PG_DB"),
-            user=config("PG_USER"),
-            password=config("PG_PASSWORD"),
-            host=config("PG_HOST"),
-            port=config("PG_PORT")
-        )
-    except psycopg2.OperationalError as e:
-        logger.error(f"Не удалось подключиться к БД")
-        return [int(admin_id) for admin_id in config('ADMINS').split(',')]
-
-    with conn.cursor() as cur:
-        cur.execute("SELECT user_id FROM users WHERE role = 'admin'")
-        rows = cur.fetchall()
-    conn.close()
-
-    return [row[0] for row in rows]
 
 
 class DBUtils:

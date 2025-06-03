@@ -74,10 +74,13 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
             f"Еженедельно активные пользователи (WAU): {stats['wau']}\n"
             # f"Подписанные на рассылку: {stats['subscribed_users']}"
         )
-        await callback.message.answer(response, parse_mode="Markdown", reply_markup=main_kb(user_id))
+        await callback.message.delete()
+        await callback.message.answer(response, parse_mode="Markdown",
+                                      reply_markup=main_kb(callback.from_user.id))
 
     elif action == "admin_upload_data":
         await state.set_state(AdminActions.waiting_for_file)
+        await callback.message.delete()
         await callback.message.answer(
             "📤 Пожалуйста, отправьте Excel-файл с данными.",
             parse_mode="Markdown"
@@ -85,6 +88,7 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
 
     elif action == "admin_delete_book":
         await state.set_state(AdminActions.waiting_book_name)
+        await callback.message.delete()
         await callback.message.answer("📝 Введите название книги для удаления:")
 
     await callback.answer()
@@ -439,6 +443,7 @@ async def process_book_name(message: Message, state: FSMContext):
         ]
     ])
 
+    # await callback.message.delete()
     await message.answer(
         f"⚠️ Вы уверены, что хотите удалить книгу?\nНазвание: {message.text}",
         reply_markup=confirm_keyboard
@@ -463,19 +468,19 @@ async def handle_delete_confirmation(callback: CallbackQuery, state: FSMContext)
                 await callback.message.delete()
                 await callback.message.answer(
                     f"✅ Книга {book_name} успешно удалена!",
-                    reply_markup=admin_panel_kb()
+                    reply_markup=main_kb(callback.from_user.id)
                 )
             else:
                 await callback.message.delete()
                 await callback.message.answer(
                     f"❌ Не удалось удалить книгу {book_name}",
-                    reply_markup=admin_panel_kb()
+                    reply_markup=main_kb(callback.from_user.id)
                 )
         else:
             await callback.message.delete()
             await callback.message.answer(
                 "❌ Удаление отменено",
-                reply_markup=admin_panel_kb()
+                reply_markup=main_kb(callback.from_user.id)
             )
 
     except Exception as e:
@@ -489,6 +494,7 @@ async def handle_delete_confirmation(callback: CallbackQuery, state: FSMContext)
 @admin_router.message(AdminActions.waiting_for_file)
 async def invalid_file_type(message: Message, state: FSMContext):
     await state.clear()
+    await message.delete()
     await message.answer("❌ Пожалуйста, отправьте файл в формате Excel (.xlsx или .xls).",
                          reply_markup=main_kb(message.from_user.id))
 
@@ -641,28 +647,45 @@ async def handle_broadcast_confirmation(callback: CallbackQuery, state: FSMConte
 @admin_router.callback_query(F.data == "admin_add_admin")
 async def add_admin_start(callback: CallbackQuery, state: FSMContext):
     await state.set_state(AdminActions.waiting_new_admin_id)
-    await callback.message.answer(
+    await callback.message.delete()
+    sent = await callback.message.answer(
         "Введите ID пользователя, которого хотите сделать администратором(узнать его можно тут: @getmyid_bot):",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="admin_cancel_add")]
+            [InlineKeyboardButton(text="Отмена", callback_data="admin_cancel_add")]
         ])
     )
+    # Сохраняем, чтобы потом убрать клавиатуру у sent
+    await state.update_data(prompt_chat_id=sent.chat.id, prompt_msg_id=sent.message_id, user_id=callback.from_user.id)
+
     await callback.answer()
 
 
 @admin_router.callback_query(F.data == "admin_cancel_add")
 async def cancel_add_admin(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    await callback.message.edit_text("Добавление администратора отменено")
+    await callback.message.delete()
     await callback.message.answer(
-        "Админ-панель:",
-        reply_markup=admin_panel_kb()
+        "❌ Добавление администратора отменено",
+        reply_markup=main_kb(callback.from_user.id)
     )
     await callback.answer()
 
 
 @admin_router.message(AdminActions.waiting_new_admin_id, F.text)
 async def process_admin_id(message: Message, state: FSMContext):
+    # Удалим кнопку отмены
+    data = await state.get_data()
+
+    chat_id = data.get("prompt_chat_id")
+    msg_id = data.get("prompt_msg_id")
+    user_id = data.get("user_id")
+
+    if chat_id and msg_id:
+        try:
+            await bot.edit_message_reply_markup(chat_id=chat_id, message_id=msg_id, reply_markup=None)
+        except Exception:
+            pass
+
     try:
         new_admin_id = int(message.text)
 
@@ -670,7 +693,8 @@ async def process_admin_id(message: Message, state: FSMContext):
         try:
             user = await bot.get_chat(new_admin_id)
         except Exception:
-            await message.answer("❌ Пользователь с таким ID не найден")
+            await message.answer("❌ Пользователь с таким ID не найден",
+                                 reply_markup=main_kb(user_id))
             return
 
         # Добавляем в список админов
@@ -682,15 +706,14 @@ async def process_admin_id(message: Message, state: FSMContext):
             await db_utils.db.close()
             admins.append(new_admin_id)
             # Здесь можно добавить сохранение в БД
-            await message.answer(f"✅ Пользователь {user.full_name} (@{user.username}) добавлен в администраторы")
+            await message.answer(f"✅ Пользователь {user.full_name} (@{user.username}) добавлен в администраторы",
+                                 reply_markup=main_kb(user_id))
         else:
-            await message.answer("⚠️ Этот пользователь уже является администратором")
+            await message.answer("⚠️ Этот пользователь уже является администратором",
+                                 reply_markup=main_kb(user_id))
 
         await state.clear()
-        await message.answer(
-            "Админ-панель:",
-            reply_markup=admin_panel_kb()
-        )
 
     except ValueError:
-        await message.answer("❌ Неверный формат ID. Введите числовой идентификатор")
+        await message.answer("❌ Неверный формат ID. Введите числовой идентификатор",
+                             reply_markup=main_kb(user_id))
