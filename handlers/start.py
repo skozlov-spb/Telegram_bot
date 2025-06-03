@@ -32,16 +32,16 @@ async def cmd_start(message: Message):
     if not is_spbu_member:
         await message.answer(
             f"Привет! 👋\nДля использования бота необходимо подписаться "
-            f"на наши каналы [СПБГУ]({config('CHANNEL_SPBU_LINK')}) и "
+            f"на наши каналы [Что там СПбГУ]({config('CHANNEL_SPBU_LINK')}) и "
             f"[Ландау позвонит]({config('CHANNEL_LANDAU_LINK')}).\n"
-            f"После подписки, пожалуйста, нажмите кнопку 'Я подписался!'",
+            f"После подписки, пожалуйста, нажмите кнопку «Я подписался!»",
             reply_markup=subscribe_channels_kb(),
             parse_mode="Markdown"
         )
         await db_utils.db.close()
         return
 
-    await message.answer('**Добро пожаловать!** 🎉\nВыберите действие в меню ниже:',
+    await message.answer('**🎉Добро пожаловать!**\nВыберите действие в меню ниже:',
                          reply_markup=main_kb(message.from_user.id), parse_mode="Markdown")
     await db_utils.db.close()
 
@@ -56,7 +56,7 @@ async def check_subscription_callback(callback: CallbackQuery):
     if is_spbu_member:
         await callback.message.delete()  # Удаляем предыдущее сообщение с кнопкой
         await callback.message.answer(
-            "Спасибо за подписку! Теперь вы можете пользоваться ботом. 🎉",
+            "🎉Спасибо за подписку! Теперь вы можете пользоваться ботом.",
             reply_markup=main_kb(user_id),
             parse_mode="Markdown"
         )
@@ -67,7 +67,7 @@ async def check_subscription_callback(callback: CallbackQuery):
     await db_utils.db.close()
 
 
-@start_router.message(F.text == "📝 Получить рекомендации")
+@start_router.message(F.text == "📝Получить рекомендации")
 async def cmd_recc(message: Message):
     user_id = message.from_user.id
     await db_utils.db.connect()
@@ -91,7 +91,7 @@ async def cmd_recc(message: Message):
     response = "**Рекомендации на основе ваших запросов:**\n\n"
     book_count = 0
     for theme in recommendations:
-        response += f"📚 *{theme['theme_name']} — {theme['specific_theme']}*\n\n"
+        response += f"📚*{theme['theme_name']} — {theme['specific_theme']}*\n\n"
         for expert in theme['experts']:
             if book_count >= 5:
                 break
@@ -99,8 +99,8 @@ async def cmd_recc(message: Message):
             expert_position = expert['expert_position']
             book_name = expert['book_name']
             description = expert['description']
-            response += f"👤 **{expert_name}** — *{expert_position[0].lower() + expert_position[1:]}.\n*"
-            response += f"📖 {book_name}\n💬 {description}\n\n"
+            response += f"👤**{expert_name}** — *{expert_position[0].lower() + expert_position[1:]}.\n*"
+            response += f"📖{book_name}\n💬{description}\n\n"
             book_count += 1
 
         if book_count >= 5:
@@ -174,13 +174,13 @@ async def display_themes(page: int, callback: CallbackQuery):
     items_per_page = 5
     themes = await db_utils.get_available_themes()
     if not themes:
-        await callback.message.answer("⚠️ *Темы отсутствуют.*", parse_mode="Markdown")
+        await callback.message.answer("⚠️*Темы отсутствуют.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
         return
 
     total_pages = (len(themes) + items_per_page - 1) // items_per_page
     if page < 0 or page >= total_pages:
-        await callback.answer("⚠️ Страница не существует.")
+        await callback.answer("⚠️Страница не существует.")
         return
 
     start_idx = page * items_per_page
@@ -189,7 +189,7 @@ async def display_themes(page: int, callback: CallbackQuery):
 
     # Создаем клавиатуру с кнопками тем
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"theme_{themes.index(theme)}")]
+        [InlineKeyboardButton(text=f"📖{theme}", callback_data=f"theme_{themes.index(theme)}")]
         for theme in current_themes
     ])
 
@@ -204,14 +204,14 @@ async def display_themes(page: int, callback: CallbackQuery):
 
     # Добавляем информацию о странице и кнопку возврата
     keyboard.inline_keyboard.append(
-        [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
+        [InlineKeyboardButton(text=f"📄Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
     )
     keyboard.inline_keyboard.append(
         [InlineKeyboardButton(text="◄ Вернуться в главное меню", callback_data="back_to_main")]
     )
 
     await callback.message.edit_text(
-        "**Выберите тему** 📚\n*Доступные категории:*",
+        "**Выберите тему**📚\n*Доступные категории:*",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
@@ -221,21 +221,21 @@ async def display_themes(page: int, callback: CallbackQuery):
 async def display_subthemes(theme_id: int, page: int, callback: CallbackQuery):
     themes = await db_utils.get_available_themes()
     if not themes or theme_id < 0 or theme_id >= len(themes):
-        await callback.message.answer("⚠️ *Тема не найдена.*", parse_mode="Markdown")
+        await callback.message.answer("⚠️*Тема не найдена.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
         return
 
     theme_name = themes[theme_id]
     subthemes = await db_utils.get_subthemes(theme_name)
     if not subthemes:
-        await callback.message.answer(f"⚠️ *Подтемы для __{theme_name}__ не найдены.*", parse_mode="Markdown")
+        await callback.message.answer(f"⚠️*Подтемы для __{theme_name}__ не найдены.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
         return
 
     items_per_page = 5
     total_pages = (len(subthemes) + items_per_page - 1) // items_per_page
     if page < 0 or page >= total_pages:
-        await callback.answer("⚠️ Страница не существует.")
+        await callback.answer("⚠️Страница не существует.")
         return
 
     start_idx = page * items_per_page
@@ -244,7 +244,7 @@ async def display_subthemes(theme_id: int, page: int, callback: CallbackQuery):
 
     # Создаем клавиатуру с кнопками подтем
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"📋 {subtheme}", callback_data=f"subtheme_{subthemes.index(subtheme)}_{theme_id}")]
+        [InlineKeyboardButton(text=f"📋{subtheme}", callback_data=f"subtheme_{subthemes.index(subtheme)}_{theme_id}")]
         for subtheme in current_subthemes
     ])
 
@@ -259,14 +259,14 @@ async def display_subthemes(theme_id: int, page: int, callback: CallbackQuery):
 
     # Добавляем информацию о странице и кнопку возврата
     keyboard.inline_keyboard.append(
-        [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
+        [InlineKeyboardButton(text=f"📄Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
     )
     keyboard.inline_keyboard.append(
         [InlineKeyboardButton(text="◄ Вернуться к темам", callback_data="get_themes")]
     )
 
     await callback.message.edit_text(
-        f"**Подтемы для __{theme_name}__** 📋\n*Выберите подтему:*",
+        f"**Подтемы для __{theme_name}__**📋\n*Выберите подтему:*",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
@@ -277,27 +277,27 @@ async def display_expert(subtheme_id: int, theme_id: int, expert_index: int, cal
                          book_page: int = 0):
     themes = await db_utils.get_available_themes()
     if not themes or theme_id < 0 or theme_id >= len(themes):
-        await callback.message.answer("⚠️ *Тема не найдена.*", parse_mode="Markdown")
+        await callback.message.answer("⚠️*Тема не найдена.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
         return
 
     theme_name = themes[theme_id]
     subthemes = await db_utils.get_subthemes(theme_name)
     if not subthemes or subtheme_id < 0 or subtheme_id >= len(subthemes):
-        await callback.message.answer(f"⚠️ *Подтема для __{theme_name}__ не найдена.*", parse_mode="Markdown")
+        await callback.message.answer(f"⚠️*Подтема для __{theme_name}__ не найдена.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
         return
 
     subtheme_name = subthemes[subtheme_id]
     recommendations = await db_utils.get_expert_recommendations(subtheme_name)
     if not recommendations:
-        await callback.message.answer(f"⚠️ *Рекомендации по теме '{subtheme_name}' не найдены.*", parse_mode="Markdown")
+        await callback.message.answer(f"⚠️*Рекомендации по теме '{subtheme_name}' не найдены.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
         return
 
     experts = list(recommendations.items())
     if expert_index < 0 or expert_index >= len(experts):
-        await callback.answer("⚠️ Эксперт не найден.")
+        await callback.answer("⚠️Эксперт не найден.")
         return
 
     expert_id, info = experts[expert_index]
@@ -318,18 +318,18 @@ async def display_expert(subtheme_id: int, theme_id: int, expert_index: int, cal
     current_books = info['books'][start_idx:end_idx]
 
     # Формируем текст
-    response = f"*{subtheme_name}* 📚\n\n"
-    response += f"👤 **{info['name']}** — *{info['position'][0] + info['position'][1:]}.*\n\n"
+    response = f"📚*{subtheme_name}*\n\n"
+    response += f"👤**{info['name']}** — *{info['position'][0].lower() + info['position'][1:]}.*\n\n"
     response += "__Книги:__\n"
 
     for book_id, description in current_books:
-        response += f"📖 *{book_id}*\n💬 {description}\n\n"
+        response += f"📖*{book_id}*\n💬{description}\n\n"
 
     if len(experts) > 1:
-        response += f"👨‍🏫 Эксперт {expert_index + 1} из {len(experts)}\n"
+        response += f"👨‍🏫Эксперт {expert_index + 1} из {len(experts)}\n"
 
     if total_book_pages > 1:
-        response += f"📄 Страница книг {book_page + 1} из {total_book_pages}"
+        response += f"📄Страница книг {book_page + 1} из {total_book_pages}"
 
     # Книги: назад/вперед
     book_nav_buttons = []
@@ -375,12 +375,12 @@ async def display_expert(subtheme_id: int, theme_id: int, expert_index: int, cal
 
 
 # Обработчик команды "📚 Просмотреть подборки от экспертов"
-@start_router.message(F.text == "📚 Просмотреть подборки от экспертов")
+@start_router.message(F.text == "📚Просмотреть подборки от экспертов")
 async def expert_recommendation(message: Message):
     await db_utils.db.connect()
     themes = await db_utils.get_available_themes()
     if not themes:
-        await message.answer("⚠️ *Темы отсутствуют.*", parse_mode="Markdown")
+        await message.answer("⚠️*Темы отсутствуют.*",reply_markup=main_kb(message.from_user.id), parse_mode="Markdown")
         await db_utils.db.close()
         return
 
@@ -393,7 +393,7 @@ async def expert_recommendation(message: Message):
 
     # Создаем клавиатуру с кнопками тем
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"📖 {theme}", callback_data=f"theme_{themes.index(theme)}")]
+        [InlineKeyboardButton(text=f"📖{theme}", callback_data=f"theme_{themes.index(theme)}")]
         for theme in current_themes
     ])
 
@@ -404,14 +404,14 @@ async def expert_recommendation(message: Message):
     if nav_buttons:
         keyboard.inline_keyboard.append(nav_buttons)
     keyboard.inline_keyboard.append(
-        [InlineKeyboardButton(text=f"📄 Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
+        [InlineKeyboardButton(text=f"📄Страница {page + 1} из {total_pages}", callback_data=f"page_{page}")]
     )
     keyboard.inline_keyboard.append(
         [InlineKeyboardButton(text="◄ Вернуться в главное меню", callback_data="back_to_main")]
     )
 
     await message.answer(
-        "**Выберите тему** 📚\n*Доступные категории:*",
+        "**Выберите тему**📚\n*Доступные категории:*",
         reply_markup=keyboard,
         parse_mode="Markdown"
     )
@@ -443,7 +443,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             page = int(parts[2])
             await display_themes(page, callback)
         else:
-            await callback.message.answer("⚠️ *Некорректный номер страницы.*", parse_mode="Markdown")
+            await callback.message.answer("⚠️*Некорректный номер страницы.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
             await callback.answer()
 
     elif data.startswith("theme_"):
@@ -452,7 +452,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             theme_id = int(parts[1])
             await display_subthemes(theme_id, 0, callback)
         else:
-            await callback.message.answer("⚠️ *Некорректный идентификатор темы.*", parse_mode="Markdown")
+            await callback.message.answer("⚠️*Некорректный идентификатор темы.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
             await callback.answer()
 
     elif data.startswith("subthemes_"):
@@ -462,7 +462,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             page = int(parts[2])
             await display_subthemes(theme_id, page, callback)
         else:
-            await callback.message.answer("⚠️ *Некорректный идентификатор темы или страницы.*", parse_mode="Markdown")
+            await callback.message.answer("⚠️*Некорректный идентификатор темы или страницы.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
             await callback.answer()
 
     elif data.startswith("subtheme_"):
@@ -472,7 +472,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             theme_id = int(parts[2])
             await display_expert(subtheme_id, theme_id, 0, callback)
         else:
-            await callback.message.answer("⚠️ *Некорректный идентификатор подтемы или темы.*", parse_mode="Markdown")
+            await callback.message.answer("⚠️*Некорректный идентификатор подтемы или темы.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
             await callback.answer()
 
     elif data.startswith("expert_"):
@@ -489,7 +489,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
                 current_index -= 1
             await display_expert(subtheme_id, theme_id, current_index, callback)
         else:
-            await callback.message.answer("⚠️ *Некорректные данные для эксперта.*", parse_mode="Markdown")
+            await callback.message.answer("⚠️*Некорректные данные для эксперта.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
             await callback.answer()
 
     elif data.startswith("books_"):
@@ -501,7 +501,7 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             book_page = int(parts[4])
             await display_expert(subtheme_id, theme_id, expert_index, callback, book_page)
     else:
-        await callback.message.answer("⚠️ *Неизвестное действие.*", parse_mode="Markdown")
+#        await callback.message.answer("⚠️*Неизвестное действие.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
 
     await db_utils.db.close()

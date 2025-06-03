@@ -4,7 +4,7 @@ import threading
 from aiogram.types import BotCommand, BotCommandScopeDefault
 
 from server import run_flask
-from create_bot import bot, dp, scheduler, create_backup, admins, update_admins, check_users_status_task, save_stats
+from create_bot import bot, dp, scheduler, create_backup, remove_menu, update_admins, check_users_status_task, save_stats
 from handlers.start import start_router
 from handlers.admin_panel import admin_router
 from db_handler.db_setup import init_db
@@ -14,7 +14,6 @@ from db_handler.db_utils import Database
 
 
 async def start_bot():
-    await set_commands()
     if not scheduler.running:
         scheduler.start()
 
@@ -24,7 +23,8 @@ async def main():
     db = Database()
     db_utils = DBUtils(db=db, bot=bot)
     await update_admins(db_utils)
-
+    await remove_menu(bot)
+    
     # Регистрация роутеров
     dp.include_router(start_router)
     dp.include_router(admin_router)

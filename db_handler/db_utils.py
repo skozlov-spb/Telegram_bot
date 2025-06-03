@@ -272,7 +272,7 @@ class DBUtils:
                 WHERE user_id NOT IN (
                     SELECT user_id 
                     FROM user_activity_logs 
-                    WHERE request_time > NOW() - INTERVAL '3 months'
+                    WHERE request_time > NOW() - INTERVAL '3 months' AND status = 'active'
                 )
                 """
             )
