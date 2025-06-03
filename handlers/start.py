@@ -366,7 +366,7 @@ async def display_expert(subtheme_id: int, theme_id: int, expert_index: int, cal
     # Назад к подтемам
     keyboard.inline_keyboard.append([
         InlineKeyboardButton(
-            text=f"◄ Вернуться к подтемам {theme_name}",
+            text=f"◄ Вернуться к подтемам",
             callback_data=f"subthemes_{theme_id}_0"
         )
     ])
