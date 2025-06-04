@@ -27,7 +27,7 @@ class Database:
             user=config("PG_USER"),
             password=config("PG_PASSWORD"),
             database=config("PG_DB"),
-            host=config("PG_HOST"),
+            host=config('PG_HOST', default='localhost'),
             port=config("PG_PORT"),
             min_size=1,
             max_size=30

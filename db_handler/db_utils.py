@@ -2,11 +2,9 @@ import logging
 from typing import List, Optional, Dict
 from datetime import datetime, timedelta
 import pandas as pd
-import psycopg2
 import asyncpg
 from asyncpg.pool import Pool
 from decouple import config
-from create_bot import admins
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramAPIError

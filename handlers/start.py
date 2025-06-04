@@ -26,14 +26,14 @@ async def cmd_start(message: Message):
     username = message.from_user.username or message.from_user.full_name
 
     _ = await db_utils.register_user(user_id, username)
-    # is_spbu_member = await db_utils.is_user_channel_member(user_id)
-    is_spbu_member = True
+    is_spbu_member = await db_utils.is_user_channel_member(user_id)  # До вывода в прод лучше закоммитить функцию
+    # is_spbu_member = True
 
     if not is_spbu_member:
         await message.answer(
             f"Привет! 👋\nДля использования бота необходимо подписаться "
-            f"на наши каналы [Что там СПбГУ]({config('CHANNEL_SPBU_LINK')}) и "
-            f"[Ландау позвонит]({config('CHANNEL_LANDAU_LINK')}).\n"
+            f"на наши каналы [Что там СПбГУ] (https://t.me/spbuniversity1724) и "
+            f"[Ландау позвонит](https://t.me/spbuniversity).\n"
             f"После подписки, пожалуйста, нажмите кнопку «Я подписался!»",
             reply_markup=subscribe_channels_kb(),
             parse_mode="Markdown"
@@ -319,7 +319,7 @@ async def display_expert(subtheme_id: int, theme_id: int, expert_index: int, cal
 
     # Формируем текст
     response = f"📚*{subtheme_name}*\n\n"
-    response += f"👤**{info['name']}** — *{info['position'][0].lower() + info['position'][1:]}.*\n\n"
+    response += f"👤**{info['name']}** — *{info['position'][0].lower() + info['position'][1:]}*\n\n"
     response += "__Книги:__\n"
 
     for book_id, description in current_books:
@@ -501,7 +501,6 @@ async def process_callback_expert_rec(callback: CallbackQuery):
             book_page = int(parts[4])
             await display_expert(subtheme_id, theme_id, expert_index, callback, book_page)
     else:
-#        await callback.message.answer("⚠️*Неизвестное действие.*",reply_markup=main_kb(callback.from_user.id), parse_mode="Markdown")
         await callback.answer()
 
     await db_utils.db.close()

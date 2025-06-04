@@ -18,7 +18,7 @@ DB_CONFIG = {
     'user': config('PG_USER'),
     'password': config('PG_PASSWORD'),
     'database': config('PG_DB'),
-    'host': config('PG_HOST')
+    'host': config('PG_HOST', default='localhost')
 }
 
 
@@ -26,7 +26,7 @@ async def create_backup():
     """Создание бэкапа базы данных"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     backup_file = f"db_handler/data/backup_{timestamp}.sql"
-    
+
     process = await asyncio.create_subprocess_exec(
         'pg_dump',
         '-h', DB_CONFIG['host'],
@@ -45,7 +45,6 @@ def schedule_jobs():
     pass
 
 
-
 async def check_users_status_task(db_utils):
     """Проверяет статус всех пользователей."""
     logger.info("Запуск ежедневной проверки статуса пользователей")
@@ -59,7 +58,8 @@ async def check_users_status_task(db_utils):
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-bot = Bot(token="7543327903:AAGhzCID6Q9cjsRS87Yb504pkEqMESIk-HY", default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+bot = Bot(token=config("TOKEN"),
+          default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher(storage=MemoryStorage())
 
 try:
@@ -68,9 +68,11 @@ except (ValueError, KeyError) as e:
     logger.error(f"Ошибка при загрузке ADMINS из .env: {e}")
     admins = []
 
+
 async def remove_menu(bot):
     await bot.delete_my_commands()
     await bot.set_chat_menu_button(menu_button=MenuButtonDefault())
+
 
 async def update_admins(db_utils):
     """Обновляет список администраторов из базы данных."""

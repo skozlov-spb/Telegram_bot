@@ -29,6 +29,7 @@ htmlcov/
 # Файлы с секретами (если они случайно попали)
 *.pem
 *.key
+*.env
 
 # Docker-файлы (если не нужны внутри образа)
 docker-compose.override.yml

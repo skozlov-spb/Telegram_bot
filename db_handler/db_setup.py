@@ -7,7 +7,7 @@ from .db_class import Database
 
 async def init_db():
     # Данные для БД
-    PG_HOST = config("PG_HOST")
+    PG_HOST = config('PG_HOST', default='localhost')
     PG_DB = config("PG_DB")
     PG_USER = config("PG_USER")
     PG_PASSWORD = config("PG_PASSWORD")

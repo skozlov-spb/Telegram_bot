@@ -6,7 +6,8 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.chat_action import ChatActionSender
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from create_bot import bot, admins
+import create_bot
+from create_bot import bot
 from keyboards.all_keyboards import admin_panel_kb, admin_delete_menu_kb
 from db_handler.db_utils import DBUtils
 from db_handler.db_class import Database
@@ -33,7 +34,7 @@ class AdminActions(StatesGroup):
     waiting_new_admin_id = State()
 
 
-@admin_router.message((F.text.endswith("Админ панель")) & (F.from_user.id.in_(admins)))
+@admin_router.message((F.text.endswith("Админ панель")) & (F.from_user.id.in_(create_bot.admins)))
 async def admin_panel(message: Message):
     await message.answer(
         "**Выберите действие в админ-панели**:",
@@ -58,7 +59,7 @@ async def process_admin_callback(callback: CallbackQuery, state: FSMContext):
     action = callback.data
     user_id = callback.from_user.id
 
-    if user_id not in admins:
+    if user_id not in create_bot.admins:
         await callback.message.answer("У вас нет доступа к админ-панели.")
         await callback.answer()
         return
@@ -101,7 +102,7 @@ async def process_theme_selection(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.connect()
     user_id = callback.from_user.id
 
-    if user_id not in admins:
+    if user_id not in create_bot.admins:
         await callback.message.answer("У вас нет доступа к админ-панели.", reply_markup=main_kb(user_id))
         await callback.answer()
         await db_utils.db.close()
@@ -281,7 +282,7 @@ async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.connect()
     user_id = callback.from_user.id
 
-    if user_id not in admins:
+    if user_id not in create_bot.admins:
         await callback.message.answer("У вас нет доступа к админ-панели.", reply_markup=main_kb(user_id))
         await callback.answer()
         await db_utils.db.close()
@@ -316,7 +317,7 @@ async def process_expert_selection(callback: CallbackQuery, state: FSMContext):
         current_experts = experts[start_idx:end_idx]
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"👤 {expert[0]} — {expert[1][0].lower() + expert[1][1:]}",
+            [InlineKeyboardButton(text=f"👤{expert[0]} — {expert[1][0].lower() + expert[1][1:]}",
                                   callback_data=f"admin_delete_expert_{current_experts.index(expert) + start_idx}")]
             for expert in current_experts
         ])
@@ -383,13 +384,13 @@ async def handle_expert_deletion(callback: CallbackQuery, state: FSMContext):
         else:
             await callback.message.delete()
             await callback.message.answer(
-                f"❌ Не удалось удалить эксперта {data['expert_name']} — {data['expert_position'][0].lower() + data['expert_position'][1:]}",
+                f"❌Не удалось удалить эксперта {data['expert_name']} — {data['expert_position'][0].lower() + data['expert_position'][1:]}",
                 reply_markup=main_kb(callback.from_user.id)
             )
     else:
         await callback.message.delete()
         await callback.message.answer(
-            "❌ Удаление эксперта отменено",
+            "❌Удаление эксперта отменено",
             reply_markup=main_kb(callback.from_user.id)
         )
 
@@ -398,7 +399,7 @@ async def handle_expert_deletion(callback: CallbackQuery, state: FSMContext):
     await db_utils.db.close()
 
 
-@admin_router.message(AdminActions.waiting_for_file, F.document, F.from_user.id.in_(admins))
+@admin_router.message(AdminActions.waiting_for_file, F.document, F.from_user.id.in_(create_bot.admins))
 async def process_uploaded_file(message: Message, state: FSMContext):
     await db_utils.db.connect()
     document = message.document
@@ -417,11 +418,11 @@ async def process_uploaded_file(message: Message, state: FSMContext):
             success = await db_utils.upload_data(file_path)
 
             if success:
-                await message.answer(f"✅Данные из файла {document.file_name} успешно загружены!",
+                await message.answer(f"✅Данные из файла «{document.file_name}» успешно загружены!",
                                      reply_markup=main_kb(message.from_user.id))
                 os.remove(file_path)
             else:
-                await message.answer(f"❌Ошибка при загрузке данных из файла {document.file_name}",
+                await message.answer(f"❌Ошибка при загрузке данных из файла «{document.file_name}»",
                                      reply_markup=main_kb(message.from_user.id))
 
             await state.clear()
@@ -432,7 +433,7 @@ async def process_uploaded_file(message: Message, state: FSMContext):
     await db_utils.db.close()
 
 
-@admin_router.message(AdminActions.waiting_book_name, F.from_user.id.in_(admins))
+@admin_router.message(AdminActions.waiting_book_name, F.from_user.id.in_(create_bot.admins))
 async def process_book_name(message: Message, state: FSMContext):
     await state.update_data(book_name=message.text)
 
@@ -484,7 +485,7 @@ async def handle_delete_confirmation(callback: CallbackQuery, state: FSMContext)
             )
 
     except Exception as e:
-        await callback.message.answer("⚠️ Произошла ошибка при удалении", reply_markup=admin_panel_kb())
+        await callback.message.answer("⚠️Произошла ошибка при удалении", reply_markup=admin_panel_kb())
 
     await state.clear()
     await callback.answer()
@@ -521,7 +522,7 @@ async def back_to_main_menu(callback: CallbackQuery):
 
 @admin_router.message(
     AdminActions.waiting_broadcast_message,
-    F.from_user.id.in_(admins),
+    F.from_user.id.in_(create_bot.admins),
     F.content_type.in_({'text', 'photo'})  # Принимаем текст и фото
 )
 async def process_broadcast_message(message: Message, state: FSMContext):
@@ -698,13 +699,13 @@ async def process_admin_id(message: Message, state: FSMContext):
             return
 
         # Добавляем в список админов
-        if new_admin_id not in admins:
+        if new_admin_id not in create_bot.admins:
             await db_utils.db.connect()
 
             await db_utils.assign_admin_role(new_admin_id)
 
             await db_utils.db.close()
-            admins.append(new_admin_id)
+            create_bot.admins.append(new_admin_id)
             # Здесь можно добавить сохранение в БД
             await message.answer(f"✅Пользователь {user.full_name} (@{user.username}) добавлен в администраторы",
                                  reply_markup=main_kb(user_id))
