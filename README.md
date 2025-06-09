@@ -77,7 +77,7 @@ my_telegram_bot/
 + is_spbu_member = await db_utils.is_user_channel_member(user_id)  # До вывода в прод лучше закоммитить функцию
 ```
 5. При необходимости можно вернуть функцию рассылки. Для этого нужно раскомментировать 37 строчку `aiogram_run.py`,
-11 и 44 строчки `keyboards\all_keyboards.py`.
+21 строчку в `handlers\admin_panel\__init__.py`, 14 строчку в `handlers\main_panel\__init__.py`.
 
 ### Переменные окружения (`.env`)
 
