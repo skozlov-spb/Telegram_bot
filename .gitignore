@@ -165,4 +165,4 @@ __pycache__/\n*.pyc
 
 db_handler/data/
 
-data/
+db_handler/input_data/

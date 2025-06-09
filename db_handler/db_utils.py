@@ -22,8 +22,7 @@ ALLOWED_ACTIVITIES = [
     'get_recommendation',
     'subscribe',
     'unsubscribe',
-    'pre_subscribed_SPBU',
-    'pre_subscribed_landau'
+    'subscribed_channels'
 ]
 
 
@@ -37,7 +36,7 @@ class DBUtils:
     """
     def __init__(
             self,
-            db: Database,
+            db: Optional[Database],
             bot: Bot
     ) -> None:
 
@@ -245,10 +244,7 @@ class DBUtils:
 
     async def get_statistic(self) -> dict:
         """
-        Получение статистики:
-        1. Общее число пользователей
-        2. Процент неактивных пользователей
-        3. Число подписанных на рассылку
+        Получение статистики
         """
         total_users = await self.db.fetchval("SELECT COUNT(*) FROM users") or 0
 
@@ -668,7 +664,7 @@ class DBUtils:
             logger.error(f"Ошибка получения тем: {exc}")
             return []
 
-    async def is_subscribed(
+    async def is_subscribed_newsletter(
             self,
             user_id: int
             ) -> bool:

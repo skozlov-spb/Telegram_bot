@@ -1,24 +1,17 @@
 import pytest
-import asyncio
 import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, User, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, User
 from aiogram.exceptions import TelegramBadRequest
-from decouple import config
 
-from handlers.start import (
-    start_router,
-    cmd_start,
+from handlers.main_panel.start import (
     check_subscription_callback,
     cmd_recc,
     process_subscription_callback,
     display_themes,
     display_subthemes,
     display_expert,
-    process_callback_expert_rec,
     db_utils,
-    rec_sys,
 )
 
 

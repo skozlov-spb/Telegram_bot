@@ -1,14 +1,14 @@
 import asyncio
 import threading
 
-from aiogram.types import BotCommand, BotCommandScopeDefault
-
 from server import run_flask
-from create_bot import bot, dp, scheduler, create_backup, remove_menu, update_admins, check_users_status_task, save_stats
-from handlers.start import start_router
-from handlers.admin_panel import admin_router
+from create_bot import (bot, dp, scheduler, create_backup, remove_menu,
+                        update_admins, check_users_status_task, save_stats)
+
+from handlers.main_panel import main_panel_router
+from handlers.admin_panel import admin_panel_router
+
 from db_handler.db_setup import init_db
-from keyboards.all_keyboards import set_commands
 from db_handler.db_utils import DBUtils
 from db_handler.db_utils import Database
 
@@ -26,8 +26,8 @@ async def main():
     await remove_menu(bot)
     
     # Регистрация роутеров
-    dp.include_router(start_router)
-    dp.include_router(admin_router)
+    dp.include_router(main_panel_router)
+    dp.include_router(admin_panel_router)
     dp.startup.register(start_bot)
     
     scheduler.add_job(

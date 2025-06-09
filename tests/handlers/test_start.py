@@ -1,8 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, ANY
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.fsm.context import FSMContext
+from aiogram.types import Message, CallbackQuery
 
 
 @pytest.fixture
@@ -95,7 +93,7 @@ class TestStartHandlers:
     async def test_cmd_start_new_user(self, mock_objects):
         with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
                 patch('handlers.start.main_kb', MagicMock()):
-            from handlers.start import cmd_start
+            from handlers.main_panel.start import cmd_start
             await cmd_start(mock_objects["message"])
 
             mock_objects["db_utils"].register_user.assert_awaited_once_with(123, "testuser")
@@ -105,7 +103,7 @@ class TestStartHandlers:
         with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
                 patch('handlers.start.rec_sys', mock_objects["rec_sys"]), \
                 patch('handlers.start.main_kb', MagicMock()):
-            from handlers.start import cmd_recc
+            from handlers.main_panel.start import cmd_recc
             await cmd_recc(mock_objects["message"])
 
             mock_objects["rec_sys"].recommend.assert_awaited_once_with(123)
@@ -116,7 +114,7 @@ class TestStartHandlers:
         with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
                 patch('handlers.start.rec_sys', mock_objects["rec_sys"]), \
                 patch('handlers.start.main_kb', MagicMock()):
-            from handlers.start import cmd_recc
+            from handlers.main_panel.start import cmd_recc
             await cmd_recc(mock_objects["message"])
 
             mock_objects["message"].answer.assert_awaited_with(
@@ -131,7 +129,7 @@ class TestStartHandlers:
                 patch('handlers.start.main_kb', MagicMock()), \
                 patch('handlers.start.bot', AsyncMock()), \
                 patch('aiogram.exceptions.TelegramBadRequest', Exception):
-            from handlers.start import process_subscription_callback
+            from handlers.main_panel.start import process_subscription_callback
             await process_subscription_callback(mock_objects["callback"])
 
             mock_objects["db_utils"].log_user_activity.assert_awaited_once_with(
@@ -144,7 +142,7 @@ class TestStartHandlers:
         mock_objects["callback"].data = "back_to_main"
         with patch('handlers.start.db_utils', mock_objects["db_utils"]), \
                 patch('handlers.start.main_kb', MagicMock()):
-            from handlers.start import process_callback_expert_rec
+            from handlers.main_panel.start import process_callback_expert_rec
             await process_callback_expert_rec(mock_objects["callback"])
 
             mock_objects["callback"].message.delete.assert_awaited_once()

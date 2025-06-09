@@ -2,12 +2,12 @@ import asyncpg
 import pandas as pd
 from decouple import config
 
-from .db_class import Database
+from db_handler.db_class import Database
 
 
 async def init_db():
     # Данные для БД
-    PG_HOST = config('PG_HOST', default='localhost')
+    PG_HOST = config('PG_HOST')
     PG_DB = config("PG_DB")
     PG_USER = config("PG_USER")
     PG_PASSWORD = config("PG_PASSWORD")
@@ -40,101 +40,103 @@ async def init_db():
     # Закрываем административный пул
     await admin_pool.close()
 
-    if not exists:
-        # Заходим в актуальную БД
-        app_pool = await asyncpg.create_pool(
-            user=PG_USER,
-            password=PG_PASSWORD,
-            database=PG_DB,
-            host=PG_HOST,
-            port=PG_PORT,
-            min_size=1, max_size=5
-        )
+    # if not exists:
+    # Заходим в актуальную БД
+    app_pool = await asyncpg.create_pool(
+        user=PG_USER,
+        password=PG_PASSWORD,
+        database=PG_DB,
+        host=PG_HOST,
+        port=PG_PORT,
+        min_size=1, max_size=5
+    )
 
-        async with app_pool.acquire() as conn:
-            # Если таблицы не существуют, то создаем и заполняем отношениями
+    async with app_pool.acquire() as conn:
+        if not exists:
             await conn.execute("""
-                CREATE TABLE IF NOT EXISTS experts (
-                    expert_id SERIAL PRIMARY KEY,
-                    expert_name VARCHAR(40) DEFAULT 'Имя скрыто',
-                    expert_position VARCHAR(150) DEFAULT 'Должность скрыта',
-                    
-                    UNIQUE (expert_name, expert_position)
-                );
-                
-                CREATE TABLE IF NOT EXISTS themes (
-                    theme_id SERIAL PRIMARY KEY,
-
-                    theme_name VARCHAR(100) NOT NULL,
-                    specific_theme VARCHAR(100) NOT NULL,
-                    
-                    UNIQUE (theme_name, specific_theme)
-                );
-                
-                CREATE TABLE IF NOT EXISTS books (
-                    book_id SERIAL PRIMARY KEY,
-
-                    book_name VARCHAR(400) NOT NULL UNIQUE,
-                    book_image VARCHAR(1000) UNIQUE
-                );
-                
-                CREATE TABLE IF NOT EXISTS experts_recommendations (
-                    rec_id SERIAL PRIMARY KEY,
-                    expert_id INT NOT NULL,
-                    theme_id INT NOT NULL,
-                    book_id INT NOT NULL,
-                    description TEXT NOT NULL,
-
-                    FOREIGN KEY(expert_id) REFERENCES experts (expert_id) ON DELETE CASCADE,
-                    FOREIGN KEY(theme_id) REFERENCES themes (theme_id)ON DELETE CASCADE,
-                    FOREIGN KEY(book_id) REFERENCES books (book_id) ON DELETE CASCADE
-                );
-                
                 CREATE TYPE user_role AS ENUM ('user', 'admin');
+                
                 CREATE TYPE user_status AS ENUM ('active', 'blocked');
-
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id BIGSERIAL PRIMARY KEY,
-                    username VARCHAR(50) NOT NULL,
-                    registration_date TIMESTAMP DEFAULT NOW(),
-                    role user_role DEFAULT 'user',
-                    status user_status DEFAULT 'active'
-                );
                 
                 CREATE TYPE activity_type AS ENUM (
                     'start_bot',                  -- При начале использования бота --
                     'get_expert_recommendation',  -- Получить экспертные рекомендации --
                     'get_recommendation',         -- Получить рекомендации от бота --
-                    'subscribe',                  -- Флаг подписки человека --
-                    'unsubscribe',                -- Флаг отписки --
+                    'subscribe',                  -- Флаг подписки на рассылку --
+                    'unsubscribe',                -- Флаг отписки от рассылки --
                     'subscribed_channels'         -- Подписка на канале --
                 );
-                
-                CREATE TABLE IF NOT EXISTS user_activity_logs (
-                    log_id SERIAL PRIMARY KEY,
-                    user_id BIGINT NOT NULL,
-                    request_time TIMESTAMP DEFAULT NOW(),
-                    request_type activity_type,
-                    theme_id INT DEFAULT NULL,
-    
-                    FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE,
-                    FOREIGN KEY(theme_id) REFERENCES themes (theme_id) ON DELETE SET NULL
-                );
-            CREATE INDEX idx_user_activity_logs_user_id_request_time ON user_activity_logs (user_id, request_time);
-            CREATE INDEX idx_user_activity_logs_request_type ON user_activity_logs (request_type);
-            CREATE INDEX idx_user_activity_logs_recent_activity ON user_activity_logs (request_time, user_id);
-            CREATE INDEX idx_users_status ON users (status);
             """)
 
-            admins_ids = [int(admin_id) for admin_id in config('ADMINS').split(',')]
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS experts (
+                expert_id SERIAL PRIMARY KEY,
+                expert_name VARCHAR(40) DEFAULT 'Имя скрыто',
+                expert_position VARCHAR(150) DEFAULT 'Должность скрыта',
+                
+                UNIQUE (expert_name, expert_position)
+            );
+            
+            CREATE TABLE IF NOT EXISTS themes (
+                theme_id SERIAL PRIMARY KEY,
 
-            for admin_id in admins_ids:
-                await conn.execute(
-                    """
-                    INSERT INTO users 
-                    (user_id, username, role)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT DO NOTHING
-                    """,
-                    admin_id, f'user_{admin_id}', 'admin'
-                )
+                theme_name VARCHAR(100) NOT NULL,
+                specific_theme VARCHAR(100) NOT NULL,
+                
+                UNIQUE (theme_name, specific_theme)
+            );
+            
+            CREATE TABLE IF NOT EXISTS books (
+                book_id SERIAL PRIMARY KEY,
+
+                book_name VARCHAR(400) NOT NULL UNIQUE,
+                book_image VARCHAR(1000) UNIQUE
+            );
+            
+            CREATE TABLE IF NOT EXISTS experts_recommendations (
+                rec_id SERIAL PRIMARY KEY,
+                expert_id INT NOT NULL,
+                theme_id INT NOT NULL,
+                book_id INT NOT NULL,
+                description TEXT NOT NULL,
+
+                FOREIGN KEY(expert_id) REFERENCES experts (expert_id) ON DELETE CASCADE,
+                FOREIGN KEY(theme_id) REFERENCES themes (theme_id)ON DELETE CASCADE,
+                FOREIGN KEY(book_id) REFERENCES books (book_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS users (
+                user_id BIGSERIAL PRIMARY KEY,
+                username VARCHAR(50) NOT NULL,
+                registration_date TIMESTAMP DEFAULT NOW(),
+                role user_role DEFAULT 'user',
+                status user_status DEFAULT 'active'
+            );
+            
+            CREATE TABLE IF NOT EXISTS user_activity_logs (
+                log_id SERIAL PRIMARY KEY,
+                user_id BIGINT NOT NULL,
+                request_time TIMESTAMP DEFAULT NOW(),
+                request_type activity_type,
+                theme_id INT DEFAULT NULL,
+
+                FOREIGN KEY(user_id) REFERENCES users (user_id) ON DELETE CASCADE,
+                FOREIGN KEY(theme_id) REFERENCES themes (theme_id) ON DELETE SET NULL
+            );
+            
+            CREATE INDEX IF NOT EXISTS idx_user_activity_logs_user_id_request_time ON user_activity_logs (user_id, request_time);
+            CREATE INDEX IF NOT EXISTS idx_user_activity_logs_request_type ON user_activity_logs (request_type);
+            CREATE INDEX IF NOT EXISTS idx_user_activity_logs_recent_activity ON user_activity_logs (request_time, user_id);
+            CREATE INDEX IF NOT EXISTS idx_users_status ON users (status);
+        """)
+
+        admins_ids = [int(admin_id) for admin_id in config('ADMINS').split(',')]
+
+        for admin_id in admins_ids:
+            await conn.execute("""
+                INSERT INTO users 
+                (user_id, username, role)
+                VALUES ($1, $2, $3)
+                ON CONFLICT DO NOTHING""",
+                admin_id, f'user_{admin_id}', 'admin'
+            )
